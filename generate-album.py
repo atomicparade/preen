@@ -1,6 +1,7 @@
 import configparser
 import math
 import re
+import urllib
 from pathlib import Path
 from PIL import Image
 
@@ -74,8 +75,10 @@ def write_html(file, images, page_title, thumbnail_size):
 
     # write thumbnails
     for image, idx in zip(images, range(1, len(images) + 1)):
+        thumbnail_path = urllib.parse.quote(str(image['thumbnail']).replace('\\', '/'))
+
         file.write(f'''\
-<p id="thumbnail-{idx}" class="thumbnail"><img src="{image['thumbnail']}" alt="{image['description']}" width="{thumbnail_size[0]}" height="{thumbnail_size[1]}"></p>\
+<p id="thumbnail-{idx}" class="thumbnail"><img src="{thumbnail_path}" alt="{image['description']}" width="{thumbnail_size[0]}" height="{thumbnail_size[1]}"></p>\
 ''')
 
     file.write(f'''\
@@ -86,8 +89,10 @@ def write_html(file, images, page_title, thumbnail_size):
 
     # write images
     for image, idx in zip(images, range(1, len(images) + 1)):
+        image_path = urllib.parse.quote(str(image['path']).replace('\\', '/'))
+
         file.write(f'''\
-      <p id="image-{idx}" class="image"><img src="{image['path']}" alt="{image['description']}"><br>{image['description']}</p>
+      <p id="image-{idx}" class="image"><img src="{image_path}" alt="{image['description']}"><br>{image['description']}</p>
 ''')
 
     file.write(f'''\
