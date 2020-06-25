@@ -1,16 +1,8 @@
+import configparser
 import math
 import re
 from pathlib import Path
 from PIL import Image
-
-import config
-
-IMAGE_DIRECTORY = config.IMAGE_DIRECTORY
-OUTPUT_CSS = config.OUTPUT_CSS
-OUTPUT_HTML = config.OUTPUT_HTML
-PAGE_TITLE = config.PAGE_TITLE
-THUMBNAIL_DIRECTORY = config.THUMBNAIL_DIRECTORY
-THUMBNAIL_SIZE = config.THUMBNAIL_SIZE
 
 def get_images(image_directory, thumbnail_directory, thumbnail_size):
     thumbnail_directory = Path(thumbnail_directory)
@@ -28,17 +20,17 @@ def get_images(image_directory, thumbnail_directory, thumbnail_size):
         thumbnail_name = Path(thumbnail_directory, file.stem + '.jpg')
 
         image = Image.open(file)
-        image.thumbnail(THUMBNAIL_SIZE)
+        image.thumbnail(thumbnail_size)
 
         top_left = (0, 0)
 
-        if image.width < THUMBNAIL_SIZE[0]:
-            top_left = (math.floor(abs(image.width - THUMBNAIL_SIZE[0]) / 2), top_left[1])
+        if image.width < thumbnail_size[0]:
+            top_left = (math.floor(abs(image.width - thumbnail_size[0]) / 2), top_left[1])
 
-        if image.height < THUMBNAIL_SIZE[1]:
-            top_left = (top_left[0], math.floor(abs(image.height - THUMBNAIL_SIZE[1]) / 2))
+        if image.height < thumbnail_size[1]:
+            top_left = (top_left[0], math.floor(abs(image.height - thumbnail_size[1]) / 2))
 
-        final_image = Image.new('RGB', THUMBNAIL_SIZE, (0, 0, 0))
+        final_image = Image.new('RGB', thumbnail_size, (0, 0, 0))
         final_image.paste(image, top_left)
         final_image.save(thumbnail_name, 'jpeg')
 
@@ -64,18 +56,18 @@ def get_images(image_directory, thumbnail_directory, thumbnail_size):
 
     return images
 
-def write_html(file, images):
+def write_html(file, images, page_title, thumbnail_size):
     file.write(f'''\
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>{PAGE_TITLE}</title>
+  <title>{page_title}</title>
   <link rel="stylesheet" type="text/css" href="album.css">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
 </head>
 <body>
-  <h1>{PAGE_TITLE}</h1>
+  <h1>{page_title}</h1>
   <div id="album">
     \
 ''')
@@ -83,7 +75,7 @@ def write_html(file, images):
     # write thumbnails
     for image, idx in zip(images, range(1, len(images) + 1)):
         file.write(f'''\
-<p id="thumbnail-{idx}" class="thumbnail"><img src="{image['thumbnail']}" alt="{image['description']}" width="{THUMBNAIL_SIZE[0]}" height="{THUMBNAIL_SIZE[1]}"></p>\
+<p id="thumbnail-{idx}" class="thumbnail"><img src="{image['thumbnail']}" alt="{image['description']}" width="{thumbnail_size[0]}" height="{thumbnail_size[1]}"></p>\
 ''')
 
     file.write(f'''\
@@ -234,12 +226,24 @@ def write_css(file, images):
 ''')
 
 def main():
-    out_html = open(OUTPUT_HTML, 'w')
-    out_css = open(OUTPUT_CSS, 'w')
+    config = configparser.ConfigParser()
+    config.read('./config')
 
-    images = get_images(IMAGE_DIRECTORY, THUMBNAIL_DIRECTORY, THUMBNAIL_SIZE)
+    image_directory = config['settings']['image_directory']
+    output_css = config['settings']['output_css']
+    output_html = config['settings']['output_html']
+    page_title = config['settings']['page_title']
+    thumbnail_directory = config['settings']['thumbnail_directory']
+    thumbnail_width = int(config['settings']['thumbnail_width'])
+    thumbnail_height = int(config['settings']['thumbnail_height'])
+    thumbnail_size = (thumbnail_width, thumbnail_height)
 
-    write_html(out_html, images)
+    out_html = open(output_html, 'w')
+    out_css = open(output_css, 'w')
+
+    images = get_images(image_directory, thumbnail_directory, thumbnail_size)
+
+    write_html(out_html, images, page_title, thumbnail_size)
     write_css(out_css, images)
 
     out_html.close()
