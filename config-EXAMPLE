@@ -1,8 +1,0 @@
-[settings]
-image_directory = ./images
-output_css = album.css
-output_html = index.html
-page_title = My Photos
-thumbnail_directory = ./thumbnails
-thumbnail_width = 100
-thumbnail_height = 100

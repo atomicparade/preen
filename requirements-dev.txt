@@ -1,0 +1,4 @@
+-r requirements.txt
+black==22.10.0
+mypy==0.982
+pylint==2.15.5
