@@ -280,6 +280,16 @@ def write_css(file, images):
 
 
 @dataclass
+class AlbumSettings:
+    gallery_title: str = ""
+    maximum_width: Optional[int] = None
+    maximum_height: Optional[int] = None
+    thumbnail_width: int = 100
+    thumbnail_height: int = 100
+    strip_gps_data: bool = True
+
+
+@dataclass
 class ImageFile:
     path: Path
     filename: str
@@ -297,7 +307,33 @@ def generate_album(image_dir_name: str) -> None:
     #      - maximum_height = None - width and height, if specified
     #      - thumbnail_width = 100
     #      - thumbnail_height = 100
-    #      - strip_location_data = True
+    #      - strip_gps_data = True
+    album_settings = AlbumSettings()
+
+    album_settings_file_path = os.path.join(image_dir_name, "album-settings.yaml")
+
+    try:
+        with open(album_settings_file_path, "r") as album_settings_file:
+            settings = yaml.safe_load(album_settings_file)
+
+        if "gallery_title" in settings:
+            album_settings.gallery_title = settings["gallery_title"]
+        else:
+            album_settings.gallery_title = os.path.basename(image_dir_name)
+
+        for attr_name in [
+            "maximum_width",
+            "maximum_height",
+            "thumbnail_width",
+            "thumbnail_height",
+            "strip_gps_data",
+        ]:
+            if attr_name in settings:
+                setattr(album_settings, attr_name, settings[attr_name])
+    except FileNotFoundError:
+        album_settings.gallery_title = os.path.basename(image_dir_name)
+
+    logger.debug("%s", album_settings)
 
     #  2) create gallery/ and gallery/thumbnails/
     gallery_dir_name = os.path.join(image_dir_name, "gallery")
@@ -416,7 +452,7 @@ def main():
         image_dir_names.append(os.getcwd())
 
     for image_dir_name in image_dir_names:
-        generate_album(image_dir_name)
+        generate_album(image_dir_name.rstrip("/\\"))
 
 
 if __name__ == "__main__":
