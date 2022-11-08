@@ -24,11 +24,55 @@ RE_IMAGE_EXTENSION = re.compile(
 )
 
 
+def is_sideways_orientation(orientation: Optional[str]) -> bool:
+    # 1: 'Horizontal (normal)',
+    # 2: 'Mirrored horizontal',
+    # 3: 'Rotated 180',
+    # 4: 'Mirrored vertical',
+    # 5: 'Mirrored horizontal then rotated 90 CCW',
+    # 6: 'Rotated 90 CW',
+    # 7: 'Mirrored horizontal then rotated 90 CW',
+    # 8: 'Rotated 90 CCW'
+    return orientation in (
+        "Mirrored vertical",
+        "Mirrored horizontal then rotated 90 CCW",
+        "Rotated 90 CW",
+        "Mirrored horizontal then rotated 90 CW",
+        "Rotated 90 CCW",
+    )
+
+
+def orient_image(image: Image, orientation: Optional[str]) -> Image:
+    if orientation in (
+        "Mirrored horizontal",
+        "Mirrored horizontal then rotated 90 CCW",
+        "Mirrored horizontal then rotated 90 CW",
+    ):
+        image = image.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+
+    if orientation in ("Mirrored vertical",):
+        image = image.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
+
+    if orientation in (
+        "Rotated 90 CW",
+        "Mirrored horizontal then rotated 90 CCW",
+    ):
+        image = image.transpose(Image.Transpose.ROTATE_270)
+
+    if orientation in ("Mirrored horizontal then rotated 90 CCW", "Rotated 90 CCW"):
+        image = image.transpose(Image.Transpose.ROTATE_90)
+
+    if orientation in ("Rotated 180",):
+        image = image.transpose(Image.Transpose.ROTATE_180)
+
+    return image
+
+
 @dataclass
 class AlbumSettings:
     gallery_title: str = ""
-    maximum_width: Optional[int] = None
-    maximum_height: Optional[int] = None
+    max_width: Optional[int] = None
+    max_height: Optional[int] = None
     thumbnail_width: int = 100
     thumbnail_height: int = 100
     strip_gps_data: bool = True
@@ -51,8 +95,8 @@ def generate_album(image_dir_name: str) -> None:
 
     #  1) read album-settings.yaml file, if present
     #      - gallery_title = {cwd basename}
-    #      - maximum_width = None  - Images will be resized to fit the maximum
-    #      - maximum_height = None - width and height, if specified
+    #      - max_width = None  - Images will be resized to fit the maximum
+    #      - max_height = None - width and height, if specified
     #      - thumbnail_width = 100
     #      - thumbnail_height = 100
     #      - strip_gps_data = True
@@ -70,8 +114,8 @@ def generate_album(image_dir_name: str) -> None:
             album_settings.gallery_title = os.path.basename(image_dir_name)
 
         for attr_name in [
-            "maximum_width",
-            "maximum_height",
+            "max_width",
+            "max_height",
             "thumbnail_width",
             "thumbnail_height",
             "strip_gps_data",
@@ -111,11 +155,18 @@ def generate_album(image_dir_name: str) -> None:
             logger.warning("PIL was unable to read image at path <%s>", file_path)
             continue
 
+        caption = ""
+        orientation = None
+
         try:
             with open(file_path, "rb") as image_file:
-                tags = exifread.process_file(image_file)
+                tags = exifread.process_file(
+                    image_file,
+                    details=False,  # Do not process makernotes
+                )
 
             caption = tags.get("EXIF UserComment", None)
+            orientation = str(tags.get("Image Orientation", None))
 
             if caption is None:
                 caption = tags.get("Image ImageDescription", "")
@@ -149,19 +200,30 @@ def generate_album(image_dir_name: str) -> None:
             logger.debug("<%s> file date: %s", filename, timestamp)
 
         # resize photos to maximum dimensions
-        # TODO: handle EXIF rotation
+        max_width = album_settings.max_width
+        max_height = album_settings.max_height
+
         final_width = image.width
         final_height = image.height
         ar = image.width / image.height
 
-        if album_settings.maximum_width is not None:
-            if final_width > album_settings.maximum_width:
-                final_width = album_settings.maximum_width
+        logger.debug("    Picture orientation is '%s'", orientation)
+        if is_sideways_orientation(orientation):
+            max_width, max_height = max_height, max_width
+            logger.debug("    Picture is sideways; max = %ix%i", max_width, max_height)
+        else:
+            logger.debug(
+                "    Picture is not sideways; max = %ix%i", max_width, max_height
+            )
+
+        if max_width is not None:
+            if final_width > max_width:
+                final_width = max_width
                 final_height = final_width / ar
 
-        if album_settings.maximum_height is not None:
-            if final_height > album_settings.maximum_height:
-                final_height = album_settings.maximum_height
+        if max_height is not None:
+            if final_height > max_height:
+                final_height = max_height
                 final_width = final_height * ar
 
         if final_height != image.height:
@@ -174,6 +236,8 @@ def generate_album(image_dir_name: str) -> None:
         image.save(final_path, exif=image.getexif())
 
         # create thumbnail
+        image = orient_image(image, orientation)
+
         thumbnail_width = album_settings.thumbnail_width
         thumbnail_height = thumbnail_width / ar
 
@@ -183,6 +247,9 @@ def generate_album(image_dir_name: str) -> None:
 
         thumbnail_width = math.floor(thumbnail_width)
         thumbnail_height = math.floor(thumbnail_height)
+
+        if is_sideways_orientation(orientation):
+            thumbnail_width, thumbnail_height = thumbnail_height, thumbnail_width
 
         image = image.resize((thumbnail_width, thumbnail_height))
 
@@ -227,9 +294,6 @@ def generate_album(image_dir_name: str) -> None:
 
     # 4) sort photos by EXIF taken date (or by file date, if EXIF date not present)
     files.sort(key=lambda file: file.timestamp)
-
-    for file in files:
-        logger.debug('%s "%s" <%s>', file.timestamp, file.caption or "", file.filename)
 
     # TODO: Create OpenGraph image and description
 
@@ -372,7 +436,6 @@ def generate_album(image_dir_name: str) -> None:
 
         index_file.write(
             """\
-
  {
         display: block;
     }
