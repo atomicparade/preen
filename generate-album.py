@@ -1,9 +1,10 @@
 import logging
+import html
 import math
 import re
 import os
 import sys
-import urllib
+import urllib.parse
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -23,126 +24,233 @@ RE_IMAGE_EXTENSION = re.compile(
 )
 
 
-def get_images(image_directory, thumbnail_directory, thumbnail_size):
-    thumbnail_directory = Path(thumbnail_directory)
+@dataclass
+class AlbumSettings:
+    gallery_title: str = ""
+    maximum_width: Optional[int] = None
+    maximum_height: Optional[int] = None
+    thumbnail_width: int = 100
+    thumbnail_height: int = 100
+    strip_gps_data: bool = True
 
-    for file in [file for file in thumbnail_directory.glob("*")]:
-        file.unlink()
 
-    thumbnail_directory.mkdir(mode=0o755, exist_ok=True)
+@dataclass
+class ImageFile:
+    original_path: Path
+    final_path: Path
+    image_url: str
+    thumbnail_url: str
+    filename: str
+    image: Image
+    timestamp: datetime
+    caption: str
 
-    files = [file for file in Path(image_directory).glob("*")]
 
-    images = []
+def generate_album(image_dir_name: str) -> None:
+    logger.debug("image_dir_name = %s", image_dir_name)
 
-    for file in files:
-        thumbnail_name = Path(thumbnail_directory, file.stem + ".jpg")
+    #  1) read album-settings.yaml file, if present
+    #      - gallery_title = {cwd basename}
+    #      - maximum_width = None  - Images will be resized to fit the maximum
+    #      - maximum_height = None - width and height, if specified
+    #      - thumbnail_width = 100
+    #      - thumbnail_height = 100
+    #      - strip_gps_data = True
+    album_settings = AlbumSettings()
 
-        image = Image.open(file)
-        image.thumbnail(thumbnail_size)
+    album_settings_file_path = os.path.join(image_dir_name, "album-settings.yaml")
 
-        top_left = (0, 0)
+    try:
+        with open(album_settings_file_path, "r") as album_settings_file:
+            settings = yaml.safe_load(album_settings_file)
 
-        if image.width < thumbnail_size[0]:
-            top_left = (
-                math.floor(abs(image.width - thumbnail_size[0]) / 2),
-                top_left[1],
-            )
-
-        if image.height < thumbnail_size[1]:
-            top_left = (
-                top_left[0],
-                math.floor(abs(image.height - thumbnail_size[1]) / 2),
-            )
-
-        final_image = Image.new("RGB", thumbnail_size, (0, 0, 0))
-        final_image.paste(image, top_left)
-        final_image.save(thumbnail_name, "jpeg")
-
-        if "_" in file.stem:
-            description = file.stem.split("_", maxsplit=1)[1]
+        if "gallery_title" in settings:
+            album_settings.gallery_title = settings["gallery_title"]
         else:
-            description = file.stem
+            album_settings.gallery_title = os.path.basename(image_dir_name)
 
-        images.append(
-            {
-                "path": str(file),
-                "thumbnail": thumbnail_name,
-                "description": description,
-                "stem": file.stem,
-            }
+        for attr_name in [
+            "maximum_width",
+            "maximum_height",
+            "thumbnail_width",
+            "thumbnail_height",
+            "strip_gps_data",
+        ]:
+            if attr_name in settings:
+                setattr(album_settings, attr_name, settings[attr_name])
+    except FileNotFoundError:
+        album_settings.gallery_title = os.path.basename(image_dir_name)
+
+    logger.debug("%s", album_settings)
+
+    # 2) create gallery/ and gallery/thumbnails/
+    gallery_dir_name = os.path.join(image_dir_name, "gallery")
+    thumbnails_dir_name = os.path.join(gallery_dir_name, "thumbnails")
+
+    gallery_dir = Path(gallery_dir_name)
+    thumbnails_dir = Path(thumbnails_dir_name)
+
+    gallery_dir.mkdir(mode=0o755, exist_ok=True)
+    thumbnails_dir.mkdir(mode=0o755, exist_ok=True)
+
+    # 3) find and process all photos
+    file_paths = list(Path(image_dir_name).glob("*"))
+
+    files = []
+
+    for file_path in file_paths:
+        # Ignore files that don't appear to be images
+        if not RE_IMAGE_EXTENSION.match(str(file_path)):
+            continue
+
+        filename = os.path.basename(file_path)
+
+        try:
+            image = Image.open(file_path)
+        except UnidentifiedImageError:
+            logger.warning("PIL was unable to read image at path <%s>", file_path)
+            continue
+
+        try:
+            with open(file_path, "rb") as image_file:
+                tags = exifread.process_file(image_file)
+
+            caption = tags.get("EXIF UserComment", None)
+
+            if caption is None:
+                caption = tags.get("Image ImageDescription", "")
+
+            caption = str(caption)
+
+            date_time_original = str(tags["EXIF DateTimeOriginal"])
+
+            # There is no time offset specified, so just fall back to UTC
+            # The original datetime, even with the wrong time zone, will
+            # hopefully be closer to the actual original date and time than
+            # the file ctime or mtime
+            offset_time_original = tags.get("EXIF OffsetTimeOriginal", "+00:00")
+
+            timestamp_str = (
+                f"{date_time_original[0:4]}-"
+                f"{date_time_original[5:7]}-"
+                f"{date_time_original[8:]} "
+                f"{offset_time_original}"
+            )
+
+            timestamp = datetime.fromisoformat(timestamp_str)
+            logger.debug("<%s> EXIF original date: %s", filename, timestamp)
+        except (KeyError, ValueError, IndexError):
+            # There was no EXIF DateTimeOriginal, so use the earlier of the file
+            # ctime and mtime
+            ctime = os.path.getctime(file_path)
+            mtime = os.path.getmtime(file_path)
+            timestamp = datetime.fromtimestamp(min(ctime, mtime))
+            timestamp = timestamp.replace(tzinfo=timezone.utc)
+            logger.debug("<%s> file date: %s", filename, timestamp)
+
+        # resize photos to maximum dimensions
+        # TODO: handle EXIF rotation
+        final_width = image.width
+        final_height = image.height
+        ar = image.width / image.height
+
+        if album_settings.maximum_width is not None:
+            if final_width > album_settings.maximum_width:
+                final_width = album_settings.maximum_width
+                final_height = final_width / ar
+
+        if album_settings.maximum_height is not None:
+            if final_height > album_settings.maximum_height:
+                final_height = album_settings.maximum_height
+                final_width = final_height * ar
+
+        if final_height != image.height:
+            final_width = math.floor(final_width)
+            final_height = math.floor(final_height)
+            image = image.resize((final_width, final_height))
+
+        # save to gallery/
+        final_path = Path(os.path.join(gallery_dir, filename))
+        image.save(final_path, exif=image.getexif())
+
+        # create thumbnail
+        thumbnail_width = album_settings.thumbnail_width
+        thumbnail_height = thumbnail_width / ar
+
+        if thumbnail_height > album_settings.thumbnail_height:
+            thumbnail_height = album_settings.thumbnail_height
+            thumbnail_width = thumbnail_height * ar
+
+        thumbnail_width = math.floor(thumbnail_width)
+        thumbnail_height = math.floor(thumbnail_height)
+
+        image = image.resize((thumbnail_width, thumbnail_height))
+
+        thumbnail_position = (
+            math.floor((album_settings.thumbnail_width - thumbnail_width) / 2),
+            math.floor((album_settings.thumbnail_height - thumbnail_height) / 2),
         )
 
-    def get_image_file_number(image):
-        if re.match(r"^(\d+)", image["stem"]) is not None:
-            return int(re.split(r"^(\d+)", image["stem"])[1])
-        else:
-            return 999
+        thumbnail_image = Image.new(
+            "RGB",
+            (album_settings.thumbnail_width, album_settings.thumbnail_height),
+            (0, 0, 0),
+        )
+        thumbnail_image.paste(image, thumbnail_position)
 
-    images = sorted(images, key=get_image_file_number)
+        # save thumbnail to gallery/thumbnails/
+        thumbnail_path = Path(os.path.join(thumbnails_dir, filename))
+        thumbnail_image.save(thumbnail_path)
 
-    return images
+        image_url = urllib.parse.quote(f"{filename}")
+        thumbnail_url = urllib.parse.quote(f"thumbnails/{filename}")
 
+        # TODO: strip GPS data if indicated
 
-def write_html(file, images, page_title, thumbnail_size):
-    file.write(
-        f"""\
+        # TODO: if not stripping GPS data, add hyperlink to map provider with
+        # GPS coordinates
+
+        # TODO: the image probably doesn't need to be saved in ImageFile
+
+        files.append(
+            ImageFile(
+                original_path=file_path,
+                final_path=final_path,
+                image_url=image_url,
+                thumbnail_url=thumbnail_url,
+                filename=filename,
+                image=Image,
+                timestamp=timestamp,
+                caption=caption,
+            )
+        )
+
+    # 4) sort photos by EXIF taken date (or by file date, if EXIF date not present)
+    files.sort(key=lambda file: file.timestamp)
+
+    for file in files:
+        logger.debug('%s "%s" <%s>', file.timestamp, file.caption or "", file.filename)
+
+    # TODO: Create OpenGraph image and description
+
+    # 5) create gallery index.html
+    index_file_path = os.path.join(gallery_dir, "index.html")
+    with open(index_file_path, "w") as index_file:
+        # write page header
+        index_file.write(
+            f"""\
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>{page_title}</title>
-  <link rel="stylesheet" type="text/css" href="album.css">
+  <title>{album_settings.gallery_title}</title>
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
-</head>
-<body>
-  <h1>{page_title}</h1>
-  <div id="album">
-    \
-"""
-    )
-
-    # write thumbnails
-    for image, idx in zip(images, range(1, len(images) + 1)):
-        thumbnail_path = urllib.parse.quote(str(image["thumbnail"]).replace("\\", "/"))
-
-        file.write(
-            f"""\
-<p id="thumbnail-{idx}" class="thumbnail"><img src="{thumbnail_path}" alt="{image['description']}" width="{thumbnail_size[0]}" height="{thumbnail_size[1]}"></p>\
 """
         )
 
-    file.write(
-        f"""\
-
-    <div id="large-view">
-      <p id="instructions" class="image">Hover over an image</p>
-"""
-    )
-
-    # write images
-    for image, idx in zip(images, range(1, len(images) + 1)):
-        image_path = urllib.parse.quote(str(image["path"]).replace("\\", "/"))
-
-        file.write(
-            f"""\
-      <p id="image-{idx}" class="image"><img src="{image_path}" alt="{image['description']}"><br>{image['description']}</p>
-"""
-        )
-
-    file.write(
-        f"""\
-    </div>
-  </div>
-</body>
-</html>
-"""
-    )
-
-
-def write_css(file, images):
-    file.write(
-        """\
+        index_file.write(
+            """\
+  <style>
 @media print {
     body {
         font-family: sans-serif;
@@ -245,183 +353,75 @@ def write_css(file, images):
         display: block;
         top: 4em;
     }
-
 """
-    )
+        )
 
-    if len(images) > 0:
-        for idx in range(1, len(images) + 1):
-            file.write(
+        for idx in range(1, len(files) + 1):
+            index_file.write(
                 f"""\
     #thumbnail-{idx}:hover ~ #large-view #image-{idx}\
 """
             )
 
-            if idx < len(images):
-                file.write(
+            if idx < len(files):
+                index_file.write(
                     """\
 ,
 """
                 )
 
-        file.write(
+        index_file.write(
             """\
+
  {
         display: block;
     }
-"""
-        )
-
-    file.write(
-        """\
 }
+  </style>
 """
-    )
-
-
-@dataclass
-class AlbumSettings:
-    gallery_title: str = ""
-    maximum_width: Optional[int] = None
-    maximum_height: Optional[int] = None
-    thumbnail_width: int = 100
-    thumbnail_height: int = 100
-    strip_gps_data: bool = True
-
-
-@dataclass
-class ImageFile:
-    path: Path
-    filename: str
-    image: Image
-    timestamp: datetime
-    caption: Optional[str]
-
-
-def generate_album(image_dir_name: str) -> None:
-    logger.debug("image_dir_name = %s", image_dir_name)
-
-    #  1) read album-settings.yaml file, if present
-    #      - gallery_title = {cwd basename}
-    #      - maximum_width = None  - Images will be resized to fit the maximum
-    #      - maximum_height = None - width and height, if specified
-    #      - thumbnail_width = 100
-    #      - thumbnail_height = 100
-    #      - strip_gps_data = True
-    album_settings = AlbumSettings()
-
-    album_settings_file_path = os.path.join(image_dir_name, "album-settings.yaml")
-
-    try:
-        with open(album_settings_file_path, "r") as album_settings_file:
-            settings = yaml.safe_load(album_settings_file)
-
-        if "gallery_title" in settings:
-            album_settings.gallery_title = settings["gallery_title"]
-        else:
-            album_settings.gallery_title = os.path.basename(image_dir_name)
-
-        for attr_name in [
-            "maximum_width",
-            "maximum_height",
-            "thumbnail_width",
-            "thumbnail_height",
-            "strip_gps_data",
-        ]:
-            if attr_name in settings:
-                setattr(album_settings, attr_name, settings[attr_name])
-    except FileNotFoundError:
-        album_settings.gallery_title = os.path.basename(image_dir_name)
-
-    logger.debug("%s", album_settings)
-
-    #  2) create gallery/ and gallery/thumbnails/
-    gallery_dir_name = os.path.join(image_dir_name, "gallery")
-    thumbnails_dir_name = os.path.join(gallery_dir_name, "thumbnails")
-
-    gallery_dir = Path(gallery_dir_name)
-    thumbnails_dir = Path(thumbnails_dir_name)
-
-    gallery_dir.mkdir(mode=0o755, exist_ok=True)
-    thumbnails_dir.mkdir(mode=0o755, exist_ok=True)
-
-    #  3) create gallery/index.html with page header and gallery title
-
-    #  4) find all photos
-    file_paths = list(Path(image_dir_name).glob("*"))
-
-    files = []
-
-    for file_path in file_paths:
-        # Ignore files that don't appear to be images
-        if not RE_IMAGE_EXTENSION.match(str(file_path)):
-            continue
-
-        filename = os.path.basename(file_path)
-
-        try:
-            image = Image.open(file_path)
-        except UnidentifiedImageError:
-            logger.warning("PIL was unable to read image at path <%s>", file_path)
-            continue
-
-        try:
-            with open(file_path, "rb") as image_file:
-                tags = exifread.process_file(image_file)
-
-            caption = tags.get("EXIF UserComment", None)
-
-            if not caption:
-                caption = tags.get("Image ImageDescription", None)
-
-            date_time_original = str(tags["EXIF DateTimeOriginal"])
-
-            # There is no time offset specified, so just fall back to UTC
-            # The original datetime, even with the wrong time zone, will
-            # hopefully be closer to the actual original date and time than
-            # the file ctime or mtime
-            offset_time_original = tags.get("EXIF OffsetTimeOriginal", "+00:00")
-
-            timestamp_str = (
-                f"{date_time_original[0:4]}-"
-                f"{date_time_original[5:7]}-"
-                f"{date_time_original[8:]} "
-                f"{offset_time_original}"
-            )
-
-            timestamp = datetime.fromisoformat(timestamp_str)
-            logger.debug("<%s> EXIF original date: %s", filename, timestamp)
-        except (KeyError, ValueError, IndexError):
-            # There was no EXIF DateTimeOriginal, so use the earlier of the file
-            # ctime and mtime
-            ctime = os.path.getctime(file_path)
-            mtime = os.path.getmtime(file_path)
-            timestamp = datetime.fromtimestamp(min(ctime, mtime))
-            timestamp = timestamp.replace(tzinfo=timezone.utc)
-            logger.debug("<%s> file date: %s", filename, timestamp)
-
-        files.append(
-            ImageFile(
-                path=file_path,
-                filename=filename,
-                image=Image,
-                timestamp=timestamp,
-                caption=caption,
-            )
         )
 
-    #  5) sort photos by EXIF taken date (or by file date, if EXIF date not present)
-    files.sort(key=lambda file: file.timestamp)
+        index_file.write(
+            f"""\
+</head>
+<body>
+  <h1>{album_settings.gallery_title}</h1>
+  <div id="album">
+"""
+        )
 
-    for file in files:
-        logger.debug(f"{file.timestamp} \"{file.caption or ''}\" <{file.filename}>")
+        # write thumbnails
+        for image, idx in zip(files, range(1, len(files) + 1)):
+            index_file.write(
+                f"""\
+    <p id="thumbnail-{idx}" class="thumbnail"><img src="{image.thumbnail_url}" alt="{html.escape(image.caption)}" width="{album_settings.thumbnail_width}" height="{album_settings.thumbnail_height}"></p>
+"""
+            )
 
-    #  6) resize photos to maximum dimensions
-    #  7) save each file to gallery/ as: {yyyy}{mm}{dd}{hh}{mm}{ss}_{alphanumeric_caption}
-    #  8) resize to thumbnail size
-    #  9) save each thumbnail to gallery/thumbnails/
-    # 10) add photo to index.html
-    # 11) add page footer
+        index_file.write(
+            f"""\
+    <div id="large-view">
+      <p id="instructions" class="image">Hover over an image</p>
+"""
+        )
+
+        # write images
+        for image, idx in zip(files, range(1, len(files) + 1)):
+            index_file.write(
+                f"""\
+      <p id="image-{idx}" class="image"><img src="{image.image_url}" alt="{html.escape(image.caption)}"><br><time datetime=\"{image.timestamp}\">{image.timestamp.strftime("%Y-%m-%d")}</time> - {html.escape(image.caption)}</p>
+"""
+            )
+
+        # write page footer
+        index_file.write(
+            f"""\
+    </div>
+  </div>
+</body>
+</html>
+"""
+        )
 
 
 def main():
