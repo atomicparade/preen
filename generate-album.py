@@ -5,14 +5,22 @@ import os
 import sys
 import urllib
 
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
+import exifread  # type: ignore
 import yaml  # type: ignore
 
-from PIL import Image  # type: ignore
+from PIL import Image, UnidentifiedImageError  # type: ignore
 
 
 logger = logging.getLogger(__name__)
+
+RE_IMAGE_EXTENSION = re.compile(
+    "^.+\\.(bmp|gif|jfif|jpe?g|png|tiff?|tga|webp)$", re.IGNORECASE
+)
 
 
 def get_images(image_directory, thumbnail_directory, thumbnail_size):
@@ -271,9 +279,17 @@ def write_css(file, images):
     )
 
 
-def generate_album(dir_name: str) -> None:
-    logger.info("dir_name = %s", dir_name)
-    logger.info("basename = %s", os.path.basename(dir_name.rstrip("/\\")))
+@dataclass
+class ImageFile:
+    path: Path
+    filename: str
+    image: Image
+    timestamp: datetime
+    caption: Optional[str]
+
+
+def generate_album(image_dir_name: str) -> None:
+    logger.debug("image_dir_name = %s", image_dir_name)
 
     #  1) read album-settings.yaml file, if present
     #      - gallery_title = {cwd basename}
@@ -283,12 +299,87 @@ def generate_album(dir_name: str) -> None:
     #      - thumbnail_height = 100
     #      - strip_location_data = True
 
+    #  2) create gallery/ and gallery/thumbnails/
+    gallery_dir_name = os.path.join(image_dir_name, "gallery")
+    thumbnails_dir_name = os.path.join(gallery_dir_name, "thumbnails")
 
+    gallery_dir = Path(gallery_dir_name)
+    thumbnails_dir = Path(thumbnails_dir_name)
 
-    #  2) create gallery/
-    #  3) create index.html with page header and gallery title
+    gallery_dir.mkdir(mode=0o755, exist_ok=True)
+    thumbnails_dir.mkdir(mode=0o755, exist_ok=True)
+
+    #  3) create gallery/index.html with page header and gallery title
+
     #  4) find all photos
+    file_paths = list(Path(image_dir_name).glob("*"))
+
+    files = []
+
+    for file_path in file_paths:
+        # Ignore files that don't appear to be images
+        if not RE_IMAGE_EXTENSION.match(str(file_path)):
+            continue
+
+        filename = os.path.basename(file_path)
+
+        try:
+            image = Image.open(file_path)
+        except UnidentifiedImageError:
+            logger.warning("PIL was unable to read image at path <%s>", file_path)
+            continue
+
+        try:
+            with open(file_path, "rb") as image_file:
+                tags = exifread.process_file(image_file)
+
+            caption = tags.get("EXIF UserComment", None)
+
+            if not caption:
+                caption = tags.get("Image ImageDescription", None)
+
+            date_time_original = str(tags["EXIF DateTimeOriginal"])
+
+            # There is no time offset specified, so just fall back to UTC
+            # The original datetime, even with the wrong time zone, will
+            # hopefully be closer to the actual original date and time than
+            # the file ctime or mtime
+            offset_time_original = tags.get("EXIF OffsetTimeOriginal", "+00:00")
+
+            timestamp_str = (
+                f"{date_time_original[0:4]}-"
+                f"{date_time_original[5:7]}-"
+                f"{date_time_original[8:]} "
+                f"{offset_time_original}"
+            )
+
+            timestamp = datetime.fromisoformat(timestamp_str)
+            logger.debug("<%s> EXIF original date: %s", filename, timestamp)
+        except (KeyError, ValueError, IndexError):
+            # There was no EXIF DateTimeOriginal, so use the earlier of the file
+            # ctime and mtime
+            ctime = os.path.getctime(file_path)
+            mtime = os.path.getmtime(file_path)
+            timestamp = datetime.fromtimestamp(min(ctime, mtime))
+            timestamp = timestamp.replace(tzinfo=timezone.utc)
+            logger.debug("<%s> file date: %s", filename, timestamp)
+
+        files.append(
+            ImageFile(
+                path=file_path,
+                filename=filename,
+                image=Image,
+                timestamp=timestamp,
+                caption=caption,
+            )
+        )
+
     #  5) sort photos by EXIF taken date (or by file date, if EXIF date not present)
+    files.sort(key=lambda file: file.timestamp)
+
+    for file in files:
+        logger.debug(f"{file.timestamp} \"{file.caption or ''}\" <{file.filename}>")
+
     #  6) resize photos to maximum dimensions
     #  7) save each file to gallery/ as: {yyyy}{mm}{dd}{hh}{mm}{ss}_{alphanumeric_caption}
     #  8) resize to thumbnail size
@@ -309,11 +400,23 @@ def main():
     )
     logger.addHandler(handler)
 
-    # If a directory was specified, use that directory;
+    # If any directories were specified, use them;
     # otherwise, default to current working directory
-    dir_name = sys.argv[1] if len(sys.argv) > 1 else os.getcwd()
+    image_dir_names = []
 
-    generate_album(dir_name)
+    for arg in sys.argv[1:]:
+        if arg in ["-d", "--debug"]:
+            logger.setLevel(logging.DEBUG)
+        elif arg in ["-h", "--help"]:
+            print("TODO: Print help information")
+        else:
+            image_dir_names.append(arg)
+
+    if len(image_dir_names) == 0:
+        image_dir_names.append(os.getcwd())
+
+    for image_dir_name in image_dir_names:
+        generate_album(image_dir_name)
 
 
 if __name__ == "__main__":
