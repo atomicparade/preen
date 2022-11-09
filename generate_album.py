@@ -520,6 +520,9 @@ def generate_album(image_dir_name: str) -> None:
             # pylint: disable=line-too-long
             img_tag = f'<img src="{image.thumbnail_url}" alt="{html.escape(image.title)}" width="{album_settings.thumbnail_width}" height="{album_settings.thumbnail_height}">'
 
+            if image.location is not None:
+                img_tag = f'<a href="https://duckduckgo.com/?iaxm=maps&q={urllib.parse.quote(image.location)}" title="{html.escape(image.location)}">{img_tag}</a>'
+
             index_file.write(
                 f"""\
 <p id="thumbnail-{idx}" class="thumbnail">{img_tag}</p>\
