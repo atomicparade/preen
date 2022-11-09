@@ -499,6 +499,7 @@ def generate_album(image_dir_name: str) -> None:
 <body>
   <h1>{album_settings.gallery_title}</h1>
   <div id="album">
+    \
 """
         )
 
@@ -509,12 +510,13 @@ def generate_album(image_dir_name: str) -> None:
 
             index_file.write(
                 f"""\
-    <p id="thumbnail-{idx}" class="thumbnail">{img_tag}</p>
+<p id="thumbnail-{idx}" class="thumbnail">{img_tag}</p>\
 """
             )
 
         index_file.write(
             """\
+
     <div id="large-view">
       <p id="instructions" class="image">Hover over an image</p>
 """
