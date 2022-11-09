@@ -1,3 +1,5 @@
+# pylint: disable=missing-module-docstring
+
 import logging
 import html
 import math
@@ -119,6 +121,8 @@ class ImageFile:
 
 
 def generate_album(image_dir_name: str) -> None:
+    """Generates an HTML album for images in a directory."""
+
     logger.debug("image_dir_name = %s", image_dir_name)
 
     #  1) read album-settings.yaml file, if present
@@ -133,7 +137,9 @@ def generate_album(image_dir_name: str) -> None:
     album_settings_file_path = os.path.join(image_dir_name, "album-settings.yaml")
 
     try:
-        with open(album_settings_file_path, "r") as album_settings_file:
+        with open(
+            album_settings_file_path, "r", encoding="utf-8"
+        ) as album_settings_file:
             settings = yaml.safe_load(album_settings_file)
 
         if "gallery_title" in settings:
@@ -247,7 +253,7 @@ def generate_album(image_dir_name: str) -> None:
 
         final_width = image.width
         final_height = image.height
-        ar = image.width / image.height
+        aspect_ratio = image.width / image.height
 
         if is_sideways_orientation(orientation):
             max_width, max_height = max_height, max_width
@@ -255,12 +261,12 @@ def generate_album(image_dir_name: str) -> None:
         if max_width is not None:
             if final_width > max_width:
                 final_width = max_width
-                final_height = final_width / ar
+                final_height = final_width / aspect_ratio
 
         if max_height is not None:
             if final_height > max_height:
                 final_height = max_height
-                final_width = final_height * ar
+                final_width = final_height * aspect_ratio
 
         if final_height != image.height:
             final_width = math.floor(final_width)
@@ -275,11 +281,11 @@ def generate_album(image_dir_name: str) -> None:
         image = orient_image(image, orientation)
 
         thumbnail_width = album_settings.thumbnail_width
-        thumbnail_height = thumbnail_width / ar
+        thumbnail_height = thumbnail_width / aspect_ratio
 
         if thumbnail_height > album_settings.thumbnail_height:
             thumbnail_height = album_settings.thumbnail_height
-            thumbnail_width = thumbnail_height * ar
+            thumbnail_width = thumbnail_height * aspect_ratio
 
         thumbnail_width = math.floor(thumbnail_width)
         thumbnail_height = math.floor(thumbnail_height)
@@ -313,8 +319,6 @@ def generate_album(image_dir_name: str) -> None:
         # TODO: if not stripping GPS data, add hyperlink to map provider with
         # GPS coordinates
 
-        # TODO: the image probably doesn't need to be saved in ImageFile
-
         files.append(
             ImageFile(
                 image_url=image_url,
@@ -332,7 +336,7 @@ def generate_album(image_dir_name: str) -> None:
 
     # 5) create gallery index.html
     index_file_path = os.path.join(gallery_dir, "index.html")
-    with open(index_file_path, "w") as index_file:
+    with open(index_file_path, "w", encoding="utf-8") as index_file:
         # write page header
         index_file.write(
             f"""\
@@ -489,6 +493,7 @@ def generate_album(image_dir_name: str) -> None:
 
         # write thumbnails
         for image, idx in zip(files, range(1, len(files) + 1)):
+            # pylint: disable=line-too-long
             index_file.write(
                 f"""\
     <p id="thumbnail-{idx}" class="thumbnail"><img src="{image.thumbnail_url}" alt="{html.escape(image.caption)}" width="{album_settings.thumbnail_width}" height="{album_settings.thumbnail_height}"></p>
@@ -496,7 +501,7 @@ def generate_album(image_dir_name: str) -> None:
             )
 
         index_file.write(
-            f"""\
+            """\
     <div id="large-view">
       <p id="instructions" class="image">Hover over an image</p>
 """
@@ -504,6 +509,7 @@ def generate_album(image_dir_name: str) -> None:
 
         # write images
         for image, idx in zip(files, range(1, len(files) + 1)):
+            # pylint: disable=line-too-long
             index_file.write(
                 f"""\
       <p id="image-{idx}" class="image"><img src="{image.image_url}" alt="{html.escape(image.caption)}"><br><time datetime=\"{image.timestamp}\">{image.timestamp.strftime("%Y-%m-%d")}</time> - {html.escape(image.caption)}</p>
@@ -512,7 +518,7 @@ def generate_album(image_dir_name: str) -> None:
 
         # write page footer
         index_file.write(
-            f"""\
+            """\
     </div>
   </div>
 </body>
@@ -522,6 +528,8 @@ def generate_album(image_dir_name: str) -> None:
 
 
 def main():
+    """Called when the program is invoked."""
+
     logger.setLevel(logging.INFO)
     handler = logging.StreamHandler()
     handler.setFormatter(

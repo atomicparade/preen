@@ -1,4 +1,4 @@
 lint:
-	black generate-album.py
-	mypy generate-album.py
-	pylint generate-album.py
+	black generate_album.py
+	mypy generate_album.py
+	pylint generate_album.py
