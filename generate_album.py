@@ -355,8 +355,6 @@ def generate_album(image_dir_name: str) -> None:
     # 4) sort photos by EXIF taken date (or by file date, if EXIF date not present)
     files.sort(key=lambda file: file.timestamp)
 
-    # TODO: Create OpenGraph image and description
-
     # 5) create gallery index.html
     index_file_path = os.path.join(gallery_dir, "index.html")
     with open(index_file_path, "w", encoding="utf-8") as index_file:
@@ -369,6 +367,8 @@ def generate_album(image_dir_name: str) -> None:
   <meta charset="utf-8">
   <title>{album_settings.gallery_title}</title>
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta property="og:title" content="{album_settings.gallery_title}">
+  <meta name="twitter:title" content="{album_settings.gallery_title}">
 """
         )
 
