@@ -3,15 +3,15 @@ import html
 import math
 import re
 import os
+import subprocess
 import sys
 import urllib.parse
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
-import exifread  # type: ignore
 import yaml  # type: ignore
 
 from PIL import Image, UnidentifiedImageError  # type: ignore
@@ -20,72 +20,100 @@ from PIL import Image, UnidentifiedImageError  # type: ignore
 logger = logging.getLogger(__name__)
 
 RE_IMAGE_EXTENSION = re.compile(
-    "^.+\\.(bmp|gif|jfif|jpe?g|png|tiff?|tga|webp)$", re.IGNORECASE
+    r"\.(bmp|gif|jfif|jpe?g|png|tiff?|tga|webp)$", re.IGNORECASE
 )
+
+RE_DATE_HAS_COLONS = re.compile(r"^\d{4}:\d{2}:\d{2}")
+
+RE_ENDS_WITH_OFFSET = re.compile(r"(-|\+)\d{2}:\d{2}$")
+
+
+def get_exif_data(filename: Union[str, Path]) -> dict[str, str]:
+    """Runs exiftool on the provided file and returns the results as a dict."""
+    results = subprocess.check_output(
+        ["exiftool", f"{str(filename)}"], encoding="utf-8"
+    )
+
+    exif_data = {}
+
+    for line in results.split("\n"):
+        parts = line.split(":", 1)
+
+        if len(parts) == 2:
+            exif_data[parts[0].strip()] = parts[1].strip()
+
+    return exif_data
 
 
 def is_sideways_orientation(orientation: Optional[str]) -> bool:
-    # 1: 'Horizontal (normal)',
-    # 2: 'Mirrored horizontal',
-    # 3: 'Rotated 180',
-    # 4: 'Mirrored vertical',
-    # 5: 'Mirrored horizontal then rotated 90 CCW',
-    # 6: 'Rotated 90 CW',
-    # 7: 'Mirrored horizontal then rotated 90 CW',
-    # 8: 'Rotated 90 CCW'
+    """Returns True if the orientation indicates rotation of 90 or 270 deg."""
+    # https://exiftool.org/TagNames/EXIF.html
+    # 1 = Horizontal (normal)
+    # 2 = Mirror horizontal
+    # 3 = Rotate 180
+    # 4 = Mirror vertical
+    # 5 = Mirror horizontal and rotate 270 CW
+    # 6 = Rotate 90 CW
+    # 7 = Mirror horizontal and rotate 90 CW
+    # 8 = Rotate 270 CW
     return orientation in (
-        "Mirrored vertical",
-        "Mirrored horizontal then rotated 90 CCW",
-        "Rotated 90 CW",
-        "Mirrored horizontal then rotated 90 CW",
-        "Rotated 90 CCW",
+        "Mirror horizontal and rotate 270 CW",
+        "Rotate 90 CW",
+        "Mirror horizontal and rotate 90 CW",
+        "Rotate 270 CW",
     )
 
 
 def orient_image(image: Image, orientation: Optional[str]) -> Image:
+    """Rotates/flips the image according to the EXIF rotation string."""
     if orientation in (
-        "Mirrored horizontal",
-        "Mirrored horizontal then rotated 90 CCW",
-        "Mirrored horizontal then rotated 90 CW",
+        "Mirror horizontal",
+        "Mirror horizontal and rotate 270 CW",
+        "Mirror horizontal and rotate 90 CW",
     ):
         image = image.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
 
-    if orientation in ("Mirrored vertical",):
+    if orientation in ("Mirror vertical",):
         image = image.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
 
     if orientation in (
-        "Rotated 90 CW",
-        "Mirrored horizontal then rotated 90 CCW",
+        "Rotate 270 CW",
+        "Mirror horizontal and rotate 270 CW",
     ):
-        image = image.transpose(Image.Transpose.ROTATE_270)
-
-    if orientation in ("Mirrored horizontal then rotated 90 CCW", "Rotated 90 CCW"):
         image = image.transpose(Image.Transpose.ROTATE_90)
 
-    if orientation in ("Rotated 180",):
+    if orientation in ("Rotate 180",):
         image = image.transpose(Image.Transpose.ROTATE_180)
+
+    if orientation in (
+        "Rotate 90 CW",
+        "Mirror horizontal and rotate 90 CW",
+    ):
+        image = image.transpose(Image.Transpose.ROTATE_270)
 
     return image
 
 
 @dataclass
 class AlbumSettings:
+    """Stores the settings for a photo album."""
+
     gallery_title: str = ""
     max_width: Optional[int] = None
     max_height: Optional[int] = None
     thumbnail_width: int = 100
     thumbnail_height: int = 100
     strip_gps_data: bool = True
+    default_time_offset: str = "+00:00"
 
 
 @dataclass
 class ImageFile:
-    original_path: Path
-    final_path: Path
+    """Stores info for an image file needed to generate the HTML album."""
+
     image_url: str
     thumbnail_url: str
     filename: str
-    image: Image
     timestamp: datetime
     caption: str
 
@@ -119,6 +147,7 @@ def generate_album(image_dir_name: str) -> None:
             "thumbnail_width",
             "thumbnail_height",
             "strip_gps_data",
+            "default_time_offset",
         ]:
             if attr_name in settings:
                 setattr(album_settings, attr_name, settings[attr_name])
@@ -144,10 +173,11 @@ def generate_album(image_dir_name: str) -> None:
 
     for file_path in file_paths:
         # Ignore files that don't appear to be images
-        if not RE_IMAGE_EXTENSION.match(str(file_path)):
+        if not RE_IMAGE_EXTENSION.search(str(file_path)):
             continue
 
         filename = os.path.basename(file_path)
+        logger.debug("Processing <%s>", filename)
 
         try:
             image = Image.open(file_path)
@@ -155,49 +185,61 @@ def generate_album(image_dir_name: str) -> None:
             logger.warning("PIL was unable to read image at path <%s>", file_path)
             continue
 
+        exif_data = get_exif_data(file_path)
+
+        title = exif_data.get("Title", "")
+        if title == "":
+            title = exif_data.get("Object Name", "")
+
+        title = ""
+        for attr_name in ["Title", "Object Name"]:
+            if attr_name in exif_data:
+                title = exif_data[attr_name]
+                break
+
         caption = ""
-        orientation = None
+        for attr_name in [
+            "Image Description",
+            "User Comment",
+            "Notes",
+            "Description",
+            "Caption-Abstract",
+        ]:
+            if attr_name in exif_data:
+                caption = exif_data[attr_name]
+                break
 
-        try:
-            with open(file_path, "rb") as image_file:
-                tags = exifread.process_file(
-                    image_file,
-                    details=False,  # Do not process makernotes
-                )
+        orientation = exif_data.get("Orientation", None)
 
-            caption = tags.get("EXIF UserComment", None)
-            orientation = str(tags.get("Image Orientation", None))
+        logger.debug("    Title: %s", title)
+        logger.debug("    Caption: %s", caption)
+        logger.debug(
+            "    Orientation: %s (%ssideways)",
+            str(orientation),
+            "" if is_sideways_orientation(orientation) else "not ",
+        )
 
-            if caption is None:
-                caption = tags.get("Image ImageDescription", "")
+        if "Date/Time Original" in exif_data:
+            timestamp_str = exif_data["Date/Time Original"]
 
-            caption = str(caption)
+            # The date may be in the format YYYY:MM:DD
+            # If it is, change it to YYYY-MM-DD
+            if RE_DATE_HAS_COLONS.search(timestamp_str):
+                timestamp_str = timestamp_str.replace(":", "-", 2)
 
-            date_time_original = str(tags["EXIF DateTimeOriginal"])
-
-            # There is no time offset specified, so just fall back to UTC
-            # The original datetime, even with the wrong time zone, will
-            # hopefully be closer to the actual original date and time than
-            # the file ctime or mtime
-            offset_time_original = tags.get("EXIF OffsetTimeOriginal", "+00:00")
-
-            timestamp_str = (
-                f"{date_time_original[0:4]}-"
-                f"{date_time_original[5:7]}-"
-                f"{date_time_original[8:]} "
-                f"{offset_time_original}"
-            )
+            if not RE_ENDS_WITH_OFFSET.search(timestamp_str):
+                timestamp_str = f"{timestamp_str}{album_settings.default_time_offset}"
 
             timestamp = datetime.fromisoformat(timestamp_str)
-            logger.debug("<%s> EXIF original date: %s", filename, timestamp)
-        except (KeyError, ValueError, IndexError):
+            logger.debug("    EXIF original date: %s", timestamp)
+        else:
             # There was no EXIF DateTimeOriginal, so use the earlier of the file
             # ctime and mtime
             ctime = os.path.getctime(file_path)
             mtime = os.path.getmtime(file_path)
             timestamp = datetime.fromtimestamp(min(ctime, mtime))
             timestamp = timestamp.replace(tzinfo=timezone.utc)
-            logger.debug("<%s> file date: %s", filename, timestamp)
+            logger.debug("    File date: %s", timestamp)
 
         # resize photos to maximum dimensions
         max_width = album_settings.max_width
@@ -207,14 +249,8 @@ def generate_album(image_dir_name: str) -> None:
         final_height = image.height
         ar = image.width / image.height
 
-        logger.debug("    Picture orientation is '%s'", orientation)
         if is_sideways_orientation(orientation):
             max_width, max_height = max_height, max_width
-            logger.debug("    Picture is sideways; max = %ix%i", max_width, max_height)
-        else:
-            logger.debug(
-                "    Picture is not sideways; max = %ix%i", max_width, max_height
-            )
 
         if max_width is not None:
             if final_width > max_width:
@@ -281,12 +317,9 @@ def generate_album(image_dir_name: str) -> None:
 
         files.append(
             ImageFile(
-                original_path=file_path,
-                final_path=final_path,
                 image_url=image_url,
                 thumbnail_url=thumbnail_url,
                 filename=filename,
-                image=Image,
                 timestamp=timestamp,
                 caption=caption,
             )
@@ -417,6 +450,7 @@ def generate_album(image_dir_name: str) -> None:
         display: block;
         top: 4em;
     }
+
 """
         )
 
