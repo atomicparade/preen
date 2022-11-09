@@ -117,7 +117,8 @@ class ImageFile:
     thumbnail_url: str
     filename: str
     timestamp: datetime
-    caption: str
+    title: str
+    location: Optional[str]
 
 
 def generate_album(image_dir_name: str) -> None:
@@ -200,7 +201,7 @@ def generate_album(image_dir_name: str) -> None:
         title = ""
         for attr_name in ["Title", "Object Name"]:
             if attr_name in exif_data:
-                title = exif_data[attr_name]
+                title = exif_data[attr_name].strip()
                 break
 
         caption = ""
@@ -212,7 +213,7 @@ def generate_album(image_dir_name: str) -> None:
             "Caption-Abstract",
         ]:
             if attr_name in exif_data:
-                caption = exif_data[attr_name]
+                caption = exif_data[attr_name].strip()
                 break
 
         orientation = exif_data.get("Orientation", None)
@@ -314,10 +315,19 @@ def generate_album(image_dir_name: str) -> None:
         image_url = urllib.parse.quote(f"{filename}")
         thumbnail_url = urllib.parse.quote(f"thumbnails/{filename}")
 
-        # TODO: strip GPS data if indicated
+        if caption == "":
+            if not album_settings.strip_gps_data and "GPS Latitude" in exif_data and "GPS Longitude" in exif_data:
+                    location = f"{exif_data['GPS Latitude']}, {exif_data['GPS Longitude']}".replace(" deg", "°")
+            else:
+                location = None
+        else:
+            location = caption
 
-        # TODO: if not stripping GPS data, add hyperlink to map provider with
-        # GPS coordinates
+        if album_settings.strip_gps_data:
+            # TODO: strip GPS data if indicated
+            pass
+
+        logger.debug(f"    Location: {str(location)}")
 
         files.append(
             ImageFile(
@@ -325,7 +335,8 @@ def generate_album(image_dir_name: str) -> None:
                 thumbnail_url=thumbnail_url,
                 filename=filename,
                 timestamp=timestamp,
-                caption=caption,
+                title=title,
+                location=location,
             )
         )
 
@@ -494,9 +505,11 @@ def generate_album(image_dir_name: str) -> None:
         # write thumbnails
         for image, idx in zip(files, range(1, len(files) + 1)):
             # pylint: disable=line-too-long
+            img_tag = f'<img src="{image.thumbnail_url}" alt="{html.escape(image.title)}" width="{album_settings.thumbnail_width}" height="{album_settings.thumbnail_height}">'
+
             index_file.write(
                 f"""\
-    <p id="thumbnail-{idx}" class="thumbnail"><img src="{image.thumbnail_url}" alt="{html.escape(image.caption)}" width="{album_settings.thumbnail_width}" height="{album_settings.thumbnail_height}"></p>
+    <p id="thumbnail-{idx}" class="thumbnail">{img_tag}</p>
 """
             )
 
@@ -509,10 +522,21 @@ def generate_album(image_dir_name: str) -> None:
 
         # write images
         for image, idx in zip(files, range(1, len(files) + 1)):
+            img_tag = f'<img src="{image.image_url}" alt="{html.escape(image.title)}">'
+
+            # pylint: disable=line-too-long
+            time_tag = f'<time datetime="{image.timestamp}">{image.timestamp.strftime("%Y-%m-%d")}</time>'
+
+            if image.location is not None:
+                # pylint: disable=line-too-long
+                location_tag = f' (<a href="https://duckduckgo.com/?iaxm=maps&q={urllib.parse.quote(image.location)}">🗺️</a>)'
+            else:
+                location_tag = ""
+
             # pylint: disable=line-too-long
             index_file.write(
                 f"""\
-      <p id="image-{idx}" class="image"><img src="{image.image_url}" alt="{html.escape(image.caption)}"><br><time datetime=\"{image.timestamp}\">{image.timestamp.strftime("%Y-%m-%d")}</time> - {html.escape(image.caption)}</p>
+      <p id="image-{idx}" class="image">{img_tag}<br>{time_tag} - {html.escape(image.title)}{location_tag}</p>
 """
             )
 
