@@ -47,6 +47,13 @@ def get_exif_data(filename: Union[str, Path]) -> dict[str, str]:
     return exif_data
 
 
+def strip_gps_data(filename: Union[str, Path]) -> None:
+    """Runs exiftool to strip GPS data from the specified file."""
+    subprocess.check_output(
+        ["exiftool", "-gps*=", "-overwrite_original", f"{str(filename)}"]
+    )
+
+
 def is_sideways_orientation(orientation: Optional[str]) -> bool:
     """Returns True if the orientation indicates rotation of 90 or 270 deg."""
     # https://exiftool.org/TagNames/EXIF.html
@@ -316,18 +323,23 @@ def generate_album(image_dir_name: str) -> None:
         thumbnail_url = urllib.parse.quote(f"thumbnails/{filename}")
 
         if caption == "":
-            if not album_settings.strip_gps_data and "GPS Latitude" in exif_data and "GPS Longitude" in exif_data:
-                    location = f"{exif_data['GPS Latitude']}, {exif_data['GPS Longitude']}".replace(" deg", "°")
+            if (
+                not album_settings.strip_gps_data
+                and "GPS Latitude" in exif_data
+                and "GPS Longitude" in exif_data
+            ):
+                location = f"{exif_data['GPS Latitude']}, {exif_data['GPS Longitude']}".replace(
+                    " deg", "°"
+                )
             else:
                 location = None
         else:
             location = caption
 
         if album_settings.strip_gps_data:
-            # TODO: strip GPS data if indicated
-            pass
+            strip_gps_data(final_path)
 
-        logger.debug(f"    Location: {str(location)}")
+        logger.debug("    Location: %s", str(location))
 
         files.append(
             ImageFile(
@@ -553,7 +565,7 @@ def generate_album(image_dir_name: str) -> None:
         )
 
 
-def main():
+def main() -> None:
     """Called when the program is invoked."""
 
     logger.setLevel(logging.INFO)
