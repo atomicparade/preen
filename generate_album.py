@@ -362,22 +362,25 @@ def write_gallery_file(
         index_file.write(
             """\
   <style>
+html {
+    scroll-behavior: smooth;
+}
+
 @media print {
     body {
         font-family: sans-serif;
     }
 
-    .thumbnail {
-        display: none;
-    }
-
-    #instructions {
+    nav {
         display: none;
     }
 
     .file img {
         max-width: 100%;
-        margin-bottom: 1em;
+    }
+
+    p {
+        margin: 0 0 2em;
     }
 }
 
@@ -395,97 +398,83 @@ def write_gallery_file(
         padding: 0;
     }
 
-    h1 {
-        margin-top: 0;
-    }
-
-    .thumbnail {
+    nav {
         display: none;
-    }
-
-    #instructions {
-        display: none;
-    }
-
-    .file:nth-child(2) img {
-        margin-top: 0;
     }
 
     .file img {
-        max-width: calc(100vw - 3em);
+        max-width: 100%;
+    }
+
+    p {
+        text-align: center;
+        margin: 0 0 2em;
     }
 }
 
 @media
-    screen and (min-width: 769px) and (hover: hover),
+    screen and (min-width: 768px) and (hover: hover),
 
     /* IE10 and IE11 (they don't support (hover: hover) */
-    screen and (min-width: 769px) and (-ms-high-contrast: none),
-    screen and (min-width: 769px) and (-ms-high-contrast: active)
+    screen and (min-width: 768px) and (-ms-high-contrast: none),
+    screen and (min-width: 768px) and (-ms-high-contrast: active)
 {
     body {
         background: #333;
         color: #eee;
         font-family: sans-serif;
-        margin: 2em 60% 2em 4em;
+        margin: 0;
         padding: 0;
     }
 
-    .album {
+    a {
+        color: #4ad;
+    }
+
+    h1 {
+        background: inherit;
+        position: fixed;
+        margin: 0;
+        padding: 2rem 4rem;
+        top: 0;
+        left: 0;
+        height: 2rem;
+        width: calc(100% - 8rem);
+    }
+
+    nav {
+        top: 6em;
+        left: 4em;
+        max-height: calc(100% - 5.6em);
+        width: calc(40% - 4em);
         display: flex;
         flex-direction: row;
         flex-wrap: wrap;
-    }
-
-    .thumbnail {
-        display: inline-block;;
-        margin: 0 .5em .2em 0;
-    }
-
-    .file {
-        background: #333;
-        display: none;
+        align-items: flex-start;
+        margin: -0.4em -0.4em 0;
+        overflow: scroll;
         position: fixed;
-        top: 2em;
-        left: 40%;
+    }
+
+    #photos {
+        margin-top: 6em;
+        margin-left: calc(40% + 1em);
+        width: calc(60% - 5em);
+    }
+
+    nav img {
+        margin: 0.4em;
+    }
+
+    p {
         text-align: center;
-        height: 90vh;
-        width: calc(60% - 4em);
+        margin: -6em 0 2em;
+        padding-top: 6em;
     }
 
     .file img {
-        display: block;
-        max-height: 92%;
         max-width: 100%;
-        margin: 0 auto;
-    }
-
-    #instructions {
-        display: block;
-        top: 4em;
-    }
-
-"""
-        )
-
-        for idx in range(1, len(files) + 1):
-            index_file.write(
-                f"""\
-    #thumbnail-{idx}:hover ~ #large-view #file-{idx}\
-"""
-            )
-
-            if idx < len(files):
-                index_file.write(
-                    """\
-,
-"""
-                )
-
-        index_file.write(
-            """\
- {
-        display: block;
+        max-height: calc(100vh - 10.5em);
     }
 }
   </style>
@@ -498,7 +487,7 @@ def write_gallery_file(
 <body>
   <h1>{album_settings.gallery_title}</h1>
   <div id="album">
-    \
+    <nav>
 """
         )
 
@@ -506,10 +495,10 @@ def write_gallery_file(
         for file, idx in zip(files, range(1, len(files) + 1)):
             metadata = file.metadata
 
-            if metadata.title is None:
-                alt_tag = ""
-            else:
+            if metadata.title is not None:
                 alt_tag = f'alt="{html.escape(metadata.title)}" '
+            else:
+                alt_tag = f'alt="{html.escape(album_settings.gallery_title)}" '
 
             img_tag = (
                 f'<img src="{file.thumbnail_url}" '
@@ -520,15 +509,14 @@ def write_gallery_file(
 
             index_file.write(
                 f"""\
-<p id="thumbnail-{idx}" class="thumbnail">{img_tag}</p>\
+<a href="#file-{idx}">{img_tag}</a>
 """
             )
 
         index_file.write(
             """\
-
-    <div id="large-view">
-      <p id="instructions" class="file">Hover over an image</p>
+    </nav>
+    <div id="photos">
 """
         )
 
@@ -538,43 +526,39 @@ def write_gallery_file(
 
             html_title = html.escape(str(metadata.title))
 
-            if metadata.title is None:
-                alt_tag = ""
+            if metadata.title is not None:
+                alt_tag = f' alt="{html_title}" '
             else:
-                alt_tag = f'alt="{html_title}" '
+                alt_tag = f' alt="{html.escape(album_settings.gallery_title)}" '
 
-            img_tag = f'<img src="{file.url}"{alt_tag}>'
+            content_parts: List[str] = []
 
-            caption_parts: List[str] = []
+            content_parts.append(
+                f'<a href="#file-{idx}">' f'<img src="{file.url}"{alt_tag}>' "</a>"
+            )
+
+            if metadata.title is not None:
+                content_parts.append(html_title)
 
             if metadata.timestamp is not None:
-                time_tag = (
+                content_parts.append(
                     f'<time datetime="{metadata.timestamp}">'
                     f'{metadata.timestamp.strftime("%d %B %Y")}'
                     f"</time>"
                 )
 
-            if metadata.title is not None and metadata.timestamp is not None:
-                caption_parts.append(f"{html_title} - {time_tag}")
-            elif metadata.title is not None:
-                caption_parts.append(html_title)
-            elif metadata.timestamp is not None:
-                caption_parts.append(time_tag)
-
             if metadata.location is not None:
-                location_tag = (
+                content_parts.append(
                     '<a href="https://duckduckgo.com/?iaxm=maps&q='
                     f"{urllib.parse.quote(metadata.location)}"
                     f'">🗺️ {html.escape(metadata.location)}</a>'
                 )
 
-                caption_parts.append(location_tag)
-
-            caption = "<br>".join(caption_parts)
+            contents = "<br>".join(content_parts)
 
             index_file.write(
                 f"""\
-      <p id="file-{idx}" class="file">{img_tag}<br>{caption}</p>
+      <p id="file-{idx}" class="file">{contents}</p>
 """
             )
 
