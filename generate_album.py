@@ -22,7 +22,11 @@ from PIL import Image, UnidentifiedImageError  # type: ignore
 logger = logging.getLogger(__name__)
 
 RE_IMAGE_EXTENSION = re.compile(
-    r"\.(bmp|gif|jfif|jpe?g|png|tiff?|tga|webp)$", re.IGNORECASE
+    r"\.(bmp|gif|jfif|jpeg|jpg|png|tif|tiff|tga|webp)$", re.IGNORECASE
+)
+
+RE_VIDEO_EXTENSION = re.compile(
+    r"\.(3gp|avi|m4v|mp4|mkv|mov|mpeg|mpg|webm|wmv)$", re.IGNORECASE
 )
 
 RE_DATE_HAS_COLONS = re.compile(r"^\d{4}:\d{2}:\d{2}")
@@ -30,21 +34,31 @@ RE_DATE_HAS_COLONS = re.compile(r"^\d{4}:\d{2}:\d{2}")
 RE_ENDS_WITH_OFFSET = re.compile(r"(-|\+)\d{2}:\d{2}$")
 
 
-def get_exif_data(filename: Union[str, Path]) -> dict[str, str]:
+def is_image_file(file_path: Path) -> bool:
+    """Returns True if the path ends with an image extension."""
+    return RE_IMAGE_EXTENSION.search(str(file_path)) is not None
+
+
+def is_video_file(file_path: Path) -> bool:
+    """Returns True if the path ends with a video extension."""
+    return RE_VIDEO_EXTENSION.search(str(file_path)) is not None
+
+
+def get_image_tags(filename: Union[str, Path]) -> dict[str, str]:
     """Run exiftool on the provided file and returns the results as a dict."""
     results = subprocess.check_output(
         ["exiftool", f"{str(filename)}"], encoding="utf-8"
     )
 
-    exif_data = {}
+    metadata = {}
 
     for line in results.split("\n"):
         parts = line.split(":", 1)
 
         if len(parts) == 2:
-            exif_data[parts[0].strip()] = parts[1].strip()
+            metadata[parts[0].strip()] = parts[1].strip()
 
-    return exif_data
+    return metadata
 
 
 def strip_gps_data(filename: Union[str, Path]) -> None:
@@ -118,25 +132,34 @@ class AlbumSettings:
     default_time_offset: str = "+00:00"
     gallery_dir: Path = Path()
     thumbnails_dir: Path = Path()
+    show_timestamps: bool = True
+    sort_key: str = "timestamp"
 
 
 @dataclass
-class ImageFile:
-    """Store info for an image file needed to generate the HTML album."""
+class FileMetadata:
+    """Store metadata for a file extracted from EXIF/IPTC/XMP or file system."""
 
-    image_url: str
+    title: Optional[str]
+    timestamp: Optional[datetime]
+    location: Optional[str]
+    orientation: Optional[str]
+
+
+@dataclass
+class AlbumFile:
+    """Store info for a file needed to generate the HTML album."""
+
+    url: str
     thumbnail_url: str
     filename: str
-    timestamp: datetime
-    title: str
-    location: Optional[str]
+    metadata: FileMetadata
 
 
 def fit_to_dimensions(
     width: float, height: float, max_width: Optional[int], max_height: Optional[int]
 ) -> Tuple[int, int]:
     """Fit a rectangle to the given max width and height."""
-
     aspect_ratio = width / height
 
     if max_width is not None and width > max_width:
@@ -153,82 +176,109 @@ def fit_to_dimensions(
     return (width, height)
 
 
-def process_file(album_settings: AlbumSettings, file_path: Path) -> Optional[ImageFile]:
-    """Obtain title and location of image, resize it, and create thumbnail."""
+def get_image_metadata(album_settings: AlbumSettings, file_path: Path) -> FileMetadata:
+    """Retrieve the title, timestamp, location, and orientation of an image."""
+    metadata = get_image_tags(file_path)
 
-    gallery_dir = album_settings.gallery_dir
-    thumbnails_dir = album_settings.thumbnails_dir
+    title = None
+    for attr_name in ["Title", "Object Name"]:
+        if attr_name in metadata:
+            title = metadata[attr_name].strip()
+            break
 
+    timestamp = None
+    if album_settings.show_timestamps:
+        if "Date/Time Original" in metadata:
+            timestamp_str = metadata["Date/Time Original"]
+
+            # The date may be in the format YYYY:MM:DD
+            # If it is, change it to YYYY-MM-DD
+            if RE_DATE_HAS_COLONS.search(timestamp_str):
+                timestamp_str = timestamp_str.replace(":", "-", 2)
+
+            if not RE_ENDS_WITH_OFFSET.search(timestamp_str):
+                timestamp_str = f"{timestamp_str}{album_settings.default_time_offset}"
+
+            timestamp = datetime.fromisoformat(timestamp_str)
+        else:
+            # There was no EXIF DateTimeOriginal, so use the earlier of the file
+            # ctime and mtime
+            ctime = os.path.getctime(file_path)
+            mtime = os.path.getmtime(file_path)
+            timestamp = datetime.fromtimestamp(min(ctime, mtime))
+            timestamp = timestamp.replace(tzinfo=timezone.utc)
+
+    location = None
+    if not album_settings.strip_gps_data:
+        for attr_name in [
+            "Image Description",
+            "User Comment",
+            "Notes",
+            "Description",
+            "Caption-Abstract",
+        ]:
+            if attr_name in metadata:
+                location = metadata[attr_name].strip()
+                break
+
+        if location is None:
+            if "GPS Latitude" in metadata and "GPS Longitude" in metadata:
+                location = (
+                    f"{metadata['GPS Latitude']}, {metadata['GPS Longitude']}".replace(
+                        " deg", "°"
+                    )
+                )
+
+    orientation = metadata.get("Orientation", None)
+
+    return FileMetadata(
+        title=title,
+        timestamp=timestamp,
+        location=location,
+        orientation=orientation,
+    )
+
+
+def get_video_metadata(_file_path: Path) -> FileMetadata:
+    """Retrieve the title, timestamp, location, and orientation of a video."""
+    # TODO: Implement get_video_metadata
+    return FileMetadata(
+        title="TODO",
+        timestamp=None,
+        location=None,
+        orientation=None,
+    )
+
+
+def process_image_file(
+    album_settings: AlbumSettings, file_path: Path
+) -> Optional[AlbumFile]:
+    """Obtain image metadata, resize the image, and create a thumbnail."""
     filename = os.path.basename(file_path)
     logger.debug("Processing <%s>", filename)
 
     try:
         image = Image.open(file_path)
     except UnidentifiedImageError:
-        logger.warning("PIL was unable to read image at path <%s>", file_path)
+        logger.warning("    PIL was unable to read image at path <%s>", file_path)
         return None
 
-    exif_data = get_exif_data(file_path)
+    metadata = get_image_metadata(album_settings, file_path)
 
-    title = exif_data.get("Title", "")
-    if title == "":
-        title = exif_data.get("Object Name", "")
-
-    title = ""
-    for attr_name in ["Title", "Object Name"]:
-        if attr_name in exif_data:
-            title = exif_data[attr_name].strip()
-            break
-
-    caption = ""
-    for attr_name in [
-        "Image Description",
-        "User Comment",
-        "Notes",
-        "Description",
-        "Caption-Abstract",
-    ]:
-        if attr_name in exif_data:
-            caption = exif_data[attr_name].strip()
-            break
-
-    orientation = exif_data.get("Orientation", None)
-
-    logger.debug("    Title: %s", title)
-    logger.debug("    Caption: %s", caption)
+    logger.debug("    Title: %s", metadata.title)
+    logger.debug("    Timestamp: %s", metadata.timestamp)
+    logger.debug("    Location: %s", metadata.location)
     logger.debug(
         "    Orientation: %s (%ssideways)",
-        str(orientation),
-        "" if is_sideways_orientation(orientation) else "not ",
+        metadata.orientation,
+        "" if is_sideways_orientation(metadata.orientation) else "not ",
     )
-
-    if "Date/Time Original" in exif_data:
-        timestamp_str = exif_data["Date/Time Original"]
-
-        # The date may be in the format YYYY:MM:DD
-        # If it is, change it to YYYY-MM-DD
-        if RE_DATE_HAS_COLONS.search(timestamp_str):
-            timestamp_str = timestamp_str.replace(":", "-", 2)
-
-        if not RE_ENDS_WITH_OFFSET.search(timestamp_str):
-            timestamp_str = f"{timestamp_str}{album_settings.default_time_offset}"
-
-        timestamp = datetime.fromisoformat(timestamp_str)
-        logger.debug("    EXIF original date: %s", timestamp)
-    else:
-        # There was no EXIF DateTimeOriginal, so use the earlier of the file
-        # ctime and mtime
-        ctime = os.path.getctime(file_path)
-        mtime = os.path.getmtime(file_path)
-        timestamp = datetime.fromtimestamp(min(ctime, mtime))
-        timestamp = timestamp.replace(tzinfo=timezone.utc)
-        logger.debug("    File date: %s", timestamp)
 
     # resize photos to maximum dimensions
     max_width = album_settings.max_width
     max_height = album_settings.max_height
 
-    if is_sideways_orientation(orientation):
+    if is_sideways_orientation(metadata.orientation):
         max_width, max_height = max_height, max_width
 
     (final_width, final_height) = fit_to_dimensions(
@@ -239,11 +289,14 @@ def process_file(album_settings: AlbumSettings, file_path: Path) -> Optional[Ima
         image = image.resize((final_width, final_height))
 
     # save to gallery/
-    final_path = Path(os.path.join(gallery_dir, filename))
+    final_path = Path(os.path.join(album_settings.gallery_dir, filename))
     image.save(final_path, exif=image.getexif())
 
+    if album_settings.strip_gps_data:
+        strip_gps_data(final_path)
+
     # create thumbnail
-    image = orient_image(image, orientation)
+    image = orient_image(image, metadata.orientation)
 
     (thumbnail_width, thumbnail_height) = fit_to_dimensions(
         image.width,
@@ -251,8 +304,6 @@ def process_file(album_settings: AlbumSettings, file_path: Path) -> Optional[Ima
         album_settings.thumbnail_width,
         album_settings.thumbnail_height,
     )
-
-    logger.debug("    Thumbnail: %ix%i", thumbnail_width, thumbnail_height)
 
     image = image.resize((thumbnail_width, thumbnail_height))
 
@@ -270,48 +321,29 @@ def process_file(album_settings: AlbumSettings, file_path: Path) -> Optional[Ima
     thumbnail_image.paste(image, thumbnail_position)
 
     # save thumbnail to gallery/thumbnails/
-    thumbnail_path = Path(os.path.join(thumbnails_dir, filename))
+    thumbnail_path = Path(os.path.join(album_settings.thumbnails_dir, filename))
     thumbnail_image.save(thumbnail_path)
 
-    image_url = urllib.parse.quote(f"{filename}")
-    thumbnail_url = urllib.parse.quote(f"thumbnails/{filename}")
-
-    if caption == "":
-        if (
-            not album_settings.strip_gps_data
-            and "GPS Latitude" in exif_data
-            and "GPS Longitude" in exif_data
-        ):
-            location = (
-                f"{exif_data['GPS Latitude']}, {exif_data['GPS Longitude']}".replace(
-                    " deg", "°"
-                )
-            )
-        else:
-            location = None
-    else:
-        location = caption
-
-    if album_settings.strip_gps_data:
-        strip_gps_data(final_path)
-
-    logger.debug("    Location: %s", str(location))
-
-    return ImageFile(
-        image_url=image_url,
-        thumbnail_url=thumbnail_url,
+    return AlbumFile(
+        url=urllib.parse.quote(f"{filename}"),
+        thumbnail_url=urllib.parse.quote(f"thumbnails/{filename}"),
         filename=filename,
-        timestamp=timestamp,
-        title=title,
-        location=location,
+        metadata=metadata,
     )
 
 
+def process_video_file(
+    _album_settings: AlbumSettings, _file_path: Path
+) -> Optional[AlbumFile]:
+    """Obtain video metadata, resize the video, and create a thumbnail."""
+    # TODO: process_video_file
+    return None
+
+
 def write_gallery_file(
-    album_settings: AlbumSettings, files: List[ImageFile], path: Path
+    album_settings: AlbumSettings, files: List[AlbumFile], path: Path
 ) -> None:
     """Generate an HTML file for a gallery."""
-
     with open(path, "w", encoding="utf-8") as index_file:
         # write page header
         index_file.write(
@@ -343,7 +375,7 @@ def write_gallery_file(
         display: none;
     }
 
-    .image img {
+    .file img {
         max-width: 100%;
         margin-bottom: 1em;
     }
@@ -375,11 +407,11 @@ def write_gallery_file(
         display: none;
     }
 
-    .image:nth-child(2) img {
+    .file:nth-child(2) img {
         margin-top: 0;
     }
 
-    .image img {
+    .file img {
         max-width: calc(100vw - 3em);
     }
 }
@@ -410,7 +442,7 @@ def write_gallery_file(
         margin: 0 .5em .2em 0;
     }
 
-    .image {
+    .file {
         background: #333;
         display: none;
         position: fixed;
@@ -421,7 +453,7 @@ def write_gallery_file(
         width: calc(60% - 4em);
     }
 
-    .image img {
+    .file img {
         display: block;
         max-height: 92%;
         max-width: 100%;
@@ -439,7 +471,7 @@ def write_gallery_file(
         for idx in range(1, len(files) + 1):
             index_file.write(
                 f"""\
-    #thumbnail-{idx}:hover ~ #large-view #image-{idx}\
+    #thumbnail-{idx}:hover ~ #large-view #file-{idx}\
 """
             )
 
@@ -471,12 +503,20 @@ def write_gallery_file(
         )
 
         # write thumbnails
-        for image, idx in zip(files, range(1, len(files) + 1)):
-            # pylint: disable=line-too-long
-            img_tag = f'<img src="{image.thumbnail_url}" alt="{html.escape(image.title)}" width="{album_settings.thumbnail_width}" height="{album_settings.thumbnail_height}">'
+        for file, idx in zip(files, range(1, len(files) + 1)):
+            metadata = file.metadata
 
-            if image.location is not None:
-                img_tag = f'<a href="https://duckduckgo.com/?iaxm=maps&q={urllib.parse.quote(image.location)}" title="{html.escape(image.location)}">{img_tag}</a>'
+            if metadata.title is None:
+                alt_tag = ""
+            else:
+                alt_tag = f'alt="{html.escape(metadata.title)}" '
+
+            img_tag = (
+                f'<img src="{file.thumbnail_url}" '
+                f"{alt_tag}"
+                f'width="{album_settings.thumbnail_width}" '
+                f'height="{album_settings.thumbnail_height}">'
+            )
 
             index_file.write(
                 f"""\
@@ -488,27 +528,53 @@ def write_gallery_file(
             """\
 
     <div id="large-view">
-      <p id="instructions" class="image">Hover over an image</p>
+      <p id="instructions" class="file">Hover over an image</p>
 """
         )
 
-        # write images
-        for image, idx in zip(files, range(1, len(files) + 1)):
-            img_tag = f'<img src="{image.image_url}" alt="{html.escape(image.title)}">'
+        # write files
+        for file, idx in zip(files, range(1, len(files) + 1)):
+            metadata = file.metadata
 
-            # pylint: disable=line-too-long
-            time_tag = f'<time datetime="{image.timestamp}">{image.timestamp.strftime("%Y-%m-%d")}</time>'
+            html_title = html.escape(str(metadata.title))
 
-            if image.location is not None:
-                # pylint: disable=line-too-long
-                location_tag = f' (<a href="https://duckduckgo.com/?iaxm=maps&q={urllib.parse.quote(image.location)}">🗺️</a>)'
+            if metadata.title is None:
+                alt_tag = ""
             else:
-                location_tag = ""
+                alt_tag = f'alt="{html_title}" '
 
-            # pylint: disable=line-too-long
+            img_tag = f'<img src="{file.url}"{alt_tag}>'
+
+            caption_parts: List[str] = []
+
+            if metadata.timestamp is not None:
+                time_tag = (
+                    f'<time datetime="{metadata.timestamp}">'
+                    f'{metadata.timestamp.strftime("%d %B %Y")}'
+                    f"</time>"
+                )
+
+            if metadata.title is not None and metadata.timestamp is not None:
+                caption_parts.append(f"{html_title} - {time_tag}")
+            elif metadata.title is not None:
+                caption_parts.append(html_title)
+            elif metadata.timestamp is not None:
+                caption_parts.append(time_tag)
+
+            if metadata.location is not None:
+                location_tag = (
+                    '<a href="https://duckduckgo.com/?iaxm=maps&q='
+                    f"{urllib.parse.quote(metadata.location)}"
+                    f'">🗺️ {html.escape(metadata.location)}</a>'
+                )
+
+                caption_parts.append(location_tag)
+
+            caption = "<br>".join(caption_parts)
+
             index_file.write(
                 f"""\
-      <p id="image-{idx}" class="image">{img_tag}<br>{time_tag} - {html.escape(image.title)}{location_tag}</p>
+      <p id="file-{idx}" class="file">{img_tag}<br>{caption}</p>
 """
             )
 
@@ -524,13 +590,12 @@ def write_gallery_file(
 
 
 def generate_album(image_dir_name: str) -> None:
-    """Generate an HTML album for images in a directory."""
-
+    """Generate an HTML album for files in a directory."""
     logger.debug("image_dir_name = %s", image_dir_name)
 
     #  1) read album-settings.yaml file, if present
     #      - gallery_title = {cwd basename}
-    #      - max_width = None  - Images will be resized to fit the maximum
+    #      - max_width = None  - Files will be resized to fit the maximum
     #      - max_height = None - width and height, if specified
     #      - thumbnail_width = 100
     #      - thumbnail_height = 100
@@ -557,6 +622,8 @@ def generate_album(image_dir_name: str) -> None:
             "thumbnail_height",
             "strip_gps_data",
             "default_time_offset",
+            "show_timestamps",
+            "sort_key",
         ]:
             if attr_name in settings:
                 setattr(album_settings, attr_name, settings[attr_name])
@@ -578,23 +645,31 @@ def generate_album(image_dir_name: str) -> None:
     album_settings.gallery_dir = gallery_dir
     album_settings.thumbnails_dir = thumbnails_dir
 
-    # 3) find and process all photos
+    # 3) find and process all file
     file_paths = list(Path(image_dir_name).glob("*"))
 
     files = []
 
     for file_path in file_paths:
         # Ignore files that don't appear to be images
-        if not RE_IMAGE_EXTENSION.search(str(file_path)):
+        if not is_image_file(file_path) and not is_video_file(file_path):
             continue
 
-        file = process_file(album_settings, file_path)
+        if is_image_file(file_path):
+            file = process_image_file(album_settings, file_path)
+        elif is_video_file(file_path):
+            file = process_video_file(album_settings, file_path)
+        else:
+            continue
 
         if file:
             files.append(file)
 
-    # 4) sort photos by EXIF taken date (or by file date, if EXIF date not present)
-    files.sort(key=lambda file: file.timestamp)
+    # 4) sort photos
+    if album_settings.sort_key == "timestamp":
+        files.sort(key=lambda file: file.metadata.timestamp or datetime.now())
+    elif album_settings.sort_key == "filename":
+        files.sort(key=lambda file: file.filename)
 
     # 5) create gallery index.html
     gallery_file_path = Path(os.path.join(gallery_dir, "index.html"))
@@ -603,7 +678,6 @@ def generate_album(image_dir_name: str) -> None:
 
 def main() -> None:
     """Called when the program is invoked."""
-
     logger.setLevel(logging.INFO)
     handler = logging.StreamHandler()
     handler.setFormatter(
