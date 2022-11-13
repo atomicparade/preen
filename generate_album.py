@@ -103,6 +103,7 @@ def orient_image(image: Image, orientation: Optional[str]) -> Image:
     return image
 
 
+# TODO: Add sorting option (sort by date, filename)
 # pylint: disable=too-many-instance-attributes
 @dataclass
 class AlbumSettings:
@@ -619,9 +620,12 @@ def main() -> None:
     image_dir_names = []
 
     for arg in sys.argv[1:]:
+        # TODO: Add an option that causes the program to iterate through every
+        # directory in the specified directory
         if arg in ["-d", "--debug"]:
             logger.setLevel(logging.DEBUG)
         elif arg in ["-h", "--help"]:
+            # TODO: Print help information
             print("TODO: Print help information")
         else:
             image_dir_names.append(arg)
@@ -629,6 +633,14 @@ def main() -> None:
     if len(image_dir_names) == 0:
         image_dir_names.append(os.getcwd())
 
+    # TODO: If iterating through every directory, create a landing page that
+    # links to each gallery
+    # However, the galleries should be stored in directories at the same level
+    # of the directory containing the landing page, NOT in a subdirectory of the
+    # landing page
+    # By default, ignore directories that begin with .
+
+    # TODO: Support video files
     for image_dir_name in image_dir_names:
         generate_album(image_dir_name.rstrip("/\\"))
 
