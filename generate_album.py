@@ -90,48 +90,57 @@ def is_video_file(file_path: Path) -> bool:
     return RE_VIDEO_EXTENSION.search(str(file_path)) is not None
 
 
-def get_image_data(filename: Union[str, Path]) -> dict[str, str]:
-    """Run exiftool on the provided file and returns the results as a dict."""
-    results = subprocess.check_output(
-        ["exiftool", f"{str(filename)}"], encoding="utf-8"
-    )
-
-    metadata = {}
-
-    for line in results.split("\n"):
-        parts = line.split(":", 1)
-
-        if len(parts) == 2:
-            metadata[parts[0].strip()] = parts[1].strip()
-
-    return metadata
-
-
 def read_metadata(filename: Union[str, Path]) -> dict[str, str]:
     """Return a dict of EXIF, IPTC, and XMP extracted from a file."""
-    xmp_file = pyexiv2.Image(f"{filename}")
+    file = pyexiv2.Image(f"{filename}")
 
-    metadata = {}
+    metadata = file.read_exif()
+    metadata.update(file.read_iptc())
+    metadata.update(file.read_xmp())
 
-    metadata = xmp_file.read_exif()
-    metadata.update(xmp_file.read_iptc())
-    metadata.update(xmp_file.read_xmp())
-
-    xmp_file.close()
+    file.close()
 
     return metadata
 
 
 def strip_gps_data(filename: Union[str, Path]) -> None:
-    """Run exiftool to strip GPS data from the specified file."""
-    subprocess.check_output(
-        ["exiftool", "-gps*=", "-overwrite_original", f"{str(filename)}"]
-    )
+    """Remove GPS data from a file."""
+    file = pyexiv2.Image(f"{filename}")
+
+    metadata = file.read_exif()
+    data_changed = False
+    for key, _value in metadata.items():
+        if "gps" in key.lower():
+            metadata[key] = None
+            data_changed = True
+    if data_changed:
+        file.modify_exif(metadata)
+
+    metadata = file.read_iptc()
+    data_changed = False
+    for key, _value in metadata.items():
+        if "gps" in key.lower():
+            metadata[key] = None
+            data_changed = True
+    if data_changed:
+        file.modify_iptc(metadata)
+
+    metadata = file.read_xmp()
+    data_changed = False
+    for key, _value in metadata.items():
+        if "gps" in key.lower():
+            metadata[key] = None
+            data_changed = True
+    if data_changed:
+        file.modify_xmp(metadata)
+
+    file.close()
+
+    return metadata
 
 
 def is_sideways_orientation(orientation: Optional[str]) -> bool:
     """Return True if the orientation indicates rotation of 90 or 270 deg."""
-    # https://exiftool.org/TagNames/EXIF.html
     # 1 = Horizontal (normal)
     # 2 = Mirror horizontal
     # 3 = Rotate 180
@@ -521,7 +530,6 @@ def process_video_file(
     shutil.copy2(file_path, final_path)
 
     # TODO: Create video thumbnail
-    # TODO: Srip GPS data from video if option is indicated
 
     return VideoFile(
         url=urllib.parse.quote(f"{filename}"),
