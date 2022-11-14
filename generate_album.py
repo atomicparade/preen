@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, List, Optional, Union
 
+import av  # type: ignore
 import pyexiv2  # type: ignore
 import yaml  # type: ignore
 
@@ -136,7 +137,7 @@ def strip_gps_data(filename: Union[str, Path]) -> None:
     return metadata
 
 
-def is_sideways_orientation(orientation: Optional[str]) -> bool:
+def is_sideways_orientation(orientation: Optional[int]) -> bool:
     """Return True if the orientation indicates rotation of 90 or 270 deg."""
     # 1 = Horizontal (normal)
     # 2 = Mirror horizontal
@@ -149,7 +150,7 @@ def is_sideways_orientation(orientation: Optional[str]) -> bool:
     return orientation in [5, 6, 7, 8]
 
 
-def orient_image(image: Image, orientation: Optional[str]) -> Image:
+def orient_image(image: Image, orientation: Optional[int]) -> Image:
     """Rotate/flip the image according to the EXIF rotation string."""
     if orientation in [2, 5, 7]:
         image = image.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
@@ -194,7 +195,7 @@ class ImageMetadata:
     title: Optional[str]
     timestamp: Optional[datetime]
     location: Optional[str]
-    orientation: Optional[str]
+    orientation: Optional[int]
 
 
 @dataclass
@@ -206,6 +207,7 @@ class VideoMetadata:
     location: Optional[str]
     width: Optional[int]
     height: Optional[int]
+    orientation: Optional[int]
 
 
 @dataclass
@@ -394,12 +396,23 @@ def get_video_metadata(album_settings: AlbumSettings, file_path: Path) -> VideoM
     if "Exif.Image.ImageHeight" in metadata:
         width = int(metadata["Exif.Image.ImageHeight"])
 
+    orientation = get_first_existing_attr(
+        metadata,
+        [
+            "Exif.Image.Orientation",
+        ],
+    )
+
+    if orientation is not None:
+        orientation = int(orientation)
+
     return VideoMetadata(
         title=title,
         timestamp=timestamp,
         location=location,
         width=width,
         height=height,
+        orientation=orientation,
     )
 
 
@@ -488,12 +501,43 @@ def process_video_file(
     logger.debug("    Title: %s", metadata.title)
     logger.debug("    Timestamp: %s", metadata.timestamp)
     logger.debug("    Location: %s", metadata.location)
+    logger.debug(
+        "    Orientation: %s (%ssideways)",
+        metadata.orientation,
+        "" if is_sideways_orientation(metadata.orientation) else "not ",
+    )
 
     final_path = Path(os.path.join(album_settings.gallery_dir, filename))
 
     shutil.copy2(file_path, final_path)
 
-    # TODO: Create video thumbnail
+    # Create video thumbnail
+    container = av.open(str(file_path))
+    frames = container.decode(video=0)  # Get the first video stream
+    first_frame = next(frames)
+    image = first_frame.to_image()
+
+    image = orient_image(image, metadata.orientation)
+    image.thumbnail((album_settings.thumbnail_width, album_settings.thumbnail_height))
+
+    # centre the thumbnail in its container
+    thumbnail_position = (
+        math.floor((album_settings.thumbnail_width - image.width) / 2),
+        math.floor((album_settings.thumbnail_height - image.height) / 2),
+    )
+
+    thumbnail_image = Image.new(
+        "RGB",
+        (album_settings.thumbnail_width, album_settings.thumbnail_height),
+        (0, 0, 0),
+    )
+    thumbnail_image.paste(image, thumbnail_position)
+
+    # save thumbnail to gallery/thumbnails/
+    thumbnail_path = Path(
+        os.path.join(album_settings.thumbnails_dir, f"{filename}.jpg")
+    )
+    thumbnail_image.save(thumbnail_path)
 
     return VideoFile(
         url=urllib.parse.quote(f"{filename}"),

@@ -1,3 +1,4 @@
 ﻿Pillow==9.3.0
 PyYAML==6.0
+av==10.0.0
 pyexiv2==2.8.1
