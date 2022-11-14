@@ -547,6 +547,52 @@ def process_video_file(
     )
 
 
+def get_image_thumbnail_html(
+    album_settings: AlbumSettings,
+    file: ImageFile,
+    idx: int,
+) -> str:
+    """Get the HTML tags for an image thumbnail."""
+    metadata = file.metadata
+
+    if metadata.title is not None:
+        alt_tag = f'alt="{html.escape(metadata.title)}" '
+    else:
+        alt_tag = f'alt="{html.escape(file.filename)}" '
+
+    img_tag = (
+        f'<img src="{file.thumbnail_url}" '
+        f"{alt_tag}"
+        f'width="{album_settings.thumbnail_width}" '
+        f'height="{album_settings.thumbnail_height}">'
+    )
+
+    return f'<a href="#file-{idx}">{img_tag}</a>'
+
+
+def get_video_thumbnail_html(
+    album_settings: AlbumSettings,
+    file: VideoFile,
+    idx: int,
+) -> str:
+    """Get the HTML tags for a video thumbnail."""
+    metadata = file.metadata
+
+    if metadata.title is not None:
+        alt_tag = f'alt="{html.escape(metadata.title)}" '
+    else:
+        alt_tag = f'alt="{html.escape(file.filename)}" '
+
+    img_tag = (
+        f'<img src="{file.thumbnail_url}" '
+        f"{alt_tag}"
+        f'width="{album_settings.thumbnail_width}" '
+        f'height="{album_settings.thumbnail_height}">'
+    )
+
+    return f'<a href="#file-{idx}" class="video-thumbnail">{img_tag}</a>'
+
+
 def get_image_html(file: ImageFile, idx: int) -> str:
     """Get the HTML tags for an image file."""
     content_parts: List[str] = []
@@ -732,6 +778,21 @@ html {
 
     nav a {
         margin: 0.4em;
+        text-decoration: none;
+        position: relative;
+    }
+
+    nav a.video-thumbnail:before {
+        color: #f8f8f8;
+        background: #00000099;
+        content: "▶";
+        position: absolute;
+        top: calc(50% - 0.7em - 0.05em);
+        left: calc(50% - 0.5em - 0.3em);
+        font-size: 1.5em;
+        padding: 0.05em 0.2em 0.05em 0.4em;
+        width: 1em;
+        height: 1.4em;
     }
 
     p {
@@ -761,25 +822,12 @@ html {
 
         # write thumbnails
         for file, idx in zip(files, range(1, len(files) + 1)):
-            metadata = file.metadata
+            if isinstance(file, ImageFile):
+                thumbnail_html = get_image_thumbnail_html(album_settings, file, idx)
+            elif isinstance(file, VideoFile):
+                thumbnail_html = get_video_thumbnail_html(album_settings, file, idx)
 
-            if metadata.title is not None:
-                alt_tag = f'alt="{html.escape(metadata.title)}" '
-            else:
-                alt_tag = f'alt="{html.escape(album_settings.gallery_title)}" '
-
-            img_tag = (
-                f'<img src="{file.thumbnail_url}" '
-                f"{alt_tag}"
-                f'width="{album_settings.thumbnail_width}" '
-                f'height="{album_settings.thumbnail_height}">'
-            )
-
-            index_file.write(
-                f"""\
-<a href="#file-{idx}">{img_tag}</a>
-"""
-            )
+            index_file.write(f"{thumbnail_html}\n")
 
         index_file.write(
             """\
@@ -795,11 +843,7 @@ html {
             elif isinstance(file, VideoFile):
                 file_html = get_video_html(file)
 
-            index_file.write(
-                f"""\
-      <p id="file-{idx}" class="file">{file_html}</p>
-"""
-            )
+            index_file.write(f'<p id="file-{idx}" class="file">{file_html}</p>\n')
 
         # write page footer
         index_file.write(
