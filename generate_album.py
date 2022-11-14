@@ -107,30 +107,28 @@ def strip_gps_data(filename: Union[str, Path]) -> None:
     """Remove GPS data from a file."""
     file = pyexiv2.Image(f"{filename}")
 
+    def remove_gps_keys(metadata: dict):
+        data_changed = False
+
+        for key, _value in metadata.items():
+            if "gps" in key.lower():
+                metadata[key] = None
+                data_changed = True
+
+        return metadata, data_changed
+
     metadata = file.read_exif()
-    data_changed = False
-    for key, _value in metadata.items():
-        if "gps" in key.lower():
-            metadata[key] = None
-            data_changed = True
+    metadata, data_changed = remove_gps_keys(metadata)
     if data_changed:
         file.modify_exif(metadata)
 
     metadata = file.read_iptc()
-    data_changed = False
-    for key, _value in metadata.items():
-        if "gps" in key.lower():
-            metadata[key] = None
-            data_changed = True
+    metadata, data_changed = remove_gps_keys(metadata)
     if data_changed:
         file.modify_iptc(metadata)
 
     metadata = file.read_xmp()
-    data_changed = False
-    for key, _value in metadata.items():
-        if "gps" in key.lower():
-            metadata[key] = None
-            data_changed = True
+    metadata, data_changed = remove_gps_keys(metadata)
     if data_changed:
         file.modify_xmp(metadata)
 
