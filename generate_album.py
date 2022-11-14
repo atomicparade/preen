@@ -5,6 +5,7 @@ import html
 import math
 import re
 import os
+import shutil
 import subprocess
 import sys
 import urllib.parse
@@ -12,8 +13,9 @@ import urllib.parse
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
+import pyexiv2  # type: ignore
 import yaml  # type: ignore
 
 from PIL import Image, UnidentifiedImageError  # type: ignore
@@ -34,6 +36,50 @@ RE_DATE_HAS_COLONS = re.compile(r"^\d{4}:\d{2}:\d{2}")
 RE_ENDS_WITH_OFFSET = re.compile(r"(-|\+)\d{2}:\d{2}$")
 
 
+def parse_gps_part(part: str) -> float:
+    """Parse a GPS coordinate component into a number (e.g., 1200/100 = 1.2)."""
+    subparts = part.split("/", 2)
+
+    if len(subparts) == 1:
+        return float(subparts[0])
+
+    numerator = int(subparts[0])
+    denominator = int(subparts[1])
+    return numerator / denominator
+
+
+def get_gps_dms_form(coordinate: str) -> str:
+    """Convert a GPS coordinate into degrees, minutes, and seconds."""
+    parts = coordinate.split()
+
+    hours = parse_gps_part(parts[0])
+    minutes = parse_gps_part(parts[1])
+    seconds = parse_gps_part(parts[2])
+
+    decimal_degrees = hours + minutes / 60 + seconds / 3600
+
+    hours = int(decimal_degrees)
+
+    decimal_degrees = (decimal_degrees - hours) * 60
+    minutes = int(decimal_degrees)
+
+    decimal_degrees = (decimal_degrees - minutes) * 60
+    seconds = decimal_degrees
+
+    return f"{hours}° {minutes}' {seconds:.2f}\""
+
+
+def get_first_existing_attr(obj: dict, attr_names: List[str]) -> Any:
+    """Return the first attribute that exists in obj, or None."""
+    for attr_name in attr_names:
+        if attr_name in obj:
+            if isinstance(obj[attr_name], dict):
+                return list(obj[attr_name].values())[0]
+            return obj[attr_name]
+
+    return None
+
+
 def is_image_file(file_path: Path) -> bool:
     """Returns True if the path ends with an image extension."""
     return RE_IMAGE_EXTENSION.search(str(file_path)) is not None
@@ -44,7 +90,7 @@ def is_video_file(file_path: Path) -> bool:
     return RE_VIDEO_EXTENSION.search(str(file_path)) is not None
 
 
-def get_image_tags(filename: Union[str, Path]) -> dict[str, str]:
+def get_image_data(filename: Union[str, Path]) -> dict[str, str]:
     """Run exiftool on the provided file and returns the results as a dict."""
     results = subprocess.check_output(
         ["exiftool", f"{str(filename)}"], encoding="utf-8"
@@ -57,6 +103,21 @@ def get_image_tags(filename: Union[str, Path]) -> dict[str, str]:
 
         if len(parts) == 2:
             metadata[parts[0].strip()] = parts[1].strip()
+
+    return metadata
+
+
+def read_metadata(filename: Union[str, Path]) -> dict[str, str]:
+    """Return a dict of EXIF, IPTC, and XMP extracted from a file."""
+    xmp_file = pyexiv2.Image(f"{filename}")
+
+    metadata = {}
+
+    metadata = xmp_file.read_exif()
+    metadata.update(xmp_file.read_iptc())
+    metadata.update(xmp_file.read_xmp())
+
+    xmp_file.close()
 
     return metadata
 
@@ -79,45 +140,29 @@ def is_sideways_orientation(orientation: Optional[str]) -> bool:
     # 6 = Rotate 90 CW
     # 7 = Mirror horizontal and rotate 90 CW
     # 8 = Rotate 270 CW
-    return orientation in (
-        "Mirror horizontal and rotate 270 CW",
-        "Rotate 90 CW",
-        "Mirror horizontal and rotate 90 CW",
-        "Rotate 270 CW",
-    )
+    return orientation in [5, 6, 7, 8]
 
 
 def orient_image(image: Image, orientation: Optional[str]) -> Image:
     """Rotate/flip the image according to the EXIF rotation string."""
-    if orientation in (
-        "Mirror horizontal",
-        "Mirror horizontal and rotate 270 CW",
-        "Mirror horizontal and rotate 90 CW",
-    ):
+    if orientation in [2, 5, 7]:
         image = image.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
 
-    if orientation in ("Mirror vertical",):
+    if orientation in [4]:
         image = image.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
 
-    if orientation in (
-        "Rotate 270 CW",
-        "Mirror horizontal and rotate 270 CW",
-    ):
+    if orientation in [5, 8]:
         image = image.transpose(Image.Transpose.ROTATE_90)
 
-    if orientation in ("Rotate 180",):
+    if orientation in [3]:
         image = image.transpose(Image.Transpose.ROTATE_180)
 
-    if orientation in (
-        "Rotate 90 CW",
-        "Mirror horizontal and rotate 90 CW",
-    ):
+    if orientation in [6, 7]:
         image = image.transpose(Image.Transpose.ROTATE_270)
 
     return image
 
 
-# TODO: Add sorting option (sort by date, filename)
 # pylint: disable=too-many-instance-attributes
 @dataclass
 class AlbumSettings:
@@ -137,8 +182,8 @@ class AlbumSettings:
 
 
 @dataclass
-class FileMetadata:
-    """Store metadata for a file extracted from EXIF/IPTC/XMP or file system."""
+class ImageMetadata:
+    """Store metadata for an image extracted from EXIF/IPTC/XMP or file system."""
 
     title: Optional[str]
     timestamp: Optional[datetime]
@@ -147,13 +192,34 @@ class FileMetadata:
 
 
 @dataclass
-class AlbumFile:
+class VideoMetadata:
+    """Store metadata for a video extracted from EXIF/IPTC/XMP or file system."""
+
+    title: Optional[str]
+    timestamp: Optional[datetime]
+    location: Optional[str]
+    width: Optional[int]
+    height: Optional[int]
+
+
+@dataclass
+class ImageFile:
     """Store info for a file needed to generate the HTML album."""
 
     url: str
     thumbnail_url: str
     filename: str
-    metadata: FileMetadata
+    metadata: ImageMetadata
+
+
+@dataclass
+class VideoFile:
+    """Store info for a file needed to generate the HTML album."""
+
+    url: str
+    thumbnail_url: str
+    filename: str
+    metadata: VideoMetadata
 
 
 def fit_to_dimensions(
@@ -176,21 +242,31 @@ def fit_to_dimensions(
     return (width, height)
 
 
-def get_image_metadata(album_settings: AlbumSettings, file_path: Path) -> FileMetadata:
+def get_image_metadata(album_settings: AlbumSettings, file_path: Path) -> ImageMetadata:
     """Retrieve the title, timestamp, location, and orientation of an image."""
-    metadata = get_image_tags(file_path)
+    metadata = read_metadata(file_path)
 
-    title = None
-    for attr_name in ["Title", "Object Name"]:
-        if attr_name in metadata:
-            title = metadata[attr_name].strip()
-            break
+    title = get_first_existing_attr(
+        metadata,
+        [
+            "Xmp.dc.title",
+            "Xmp.acdsee.caption",
+            "Iptc.Application2.ObjectName",
+        ],
+    )
 
     timestamp = None
     if album_settings.show_timestamps:
-        if "Date/Time Original" in metadata:
-            timestamp_str = metadata["Date/Time Original"]
+        timestamp_str = get_first_existing_attr(
+            metadata,
+            [
+                "Exif.Photo.DateTimeOriginal",
+                "Exif.Image.DateTime",
+                "Exif.Photo.DateTimeDigitized",
+            ],
+        )
 
+        if timestamp_str is not None:
             # The date may be in the format YYYY:MM:DD
             # If it is, change it to YYYY-MM-DD
             if RE_DATE_HAS_COLONS.search(timestamp_str):
@@ -210,28 +286,43 @@ def get_image_metadata(album_settings: AlbumSettings, file_path: Path) -> FileMe
 
     location = None
     if not album_settings.strip_gps_data:
-        for attr_name in [
-            "Image Description",
-            "User Comment",
-            "Notes",
-            "Description",
-            "Caption-Abstract",
-        ]:
-            if attr_name in metadata:
-                location = metadata[attr_name].strip()
-                break
+        location = get_first_existing_attr(
+            metadata,
+            [
+                "Exif.Image.ImageDescription",
+                "Iptc.Application2.Caption",
+                "Xmp.acdsee.notes",
+                "Xmp.dc.description",
+                "Xmp.exif.UserComment",
+                "Xmp.tiff.ImageDescription",
+            ],
+        )
 
-        if location is None:
-            if "GPS Latitude" in metadata and "GPS Longitude" in metadata:
-                location = (
-                    f"{metadata['GPS Latitude']}, {metadata['GPS Longitude']}".replace(
-                        " deg", "°"
-                    )
-                )
+        if (
+            location is None
+            and "Exif.GPSInfo.GPSLatitudeRef" in metadata
+            and "Exif.GPSInfo.GPSLatitude" in metadata
+            and "Exif.GPSInfo.GPSLongitudeRef" in metadata
+            and "Exif.GPSInfo.GPSLongitude" in metadata
+        ):
+            location = (
+                f"{get_gps_dms_form(metadata['Exif.GPSInfo.GPSLatitude'])} "
+                f"{metadata['Exif.GPSInfo.GPSLatitudeRef']} "
+                f"{get_gps_dms_form(metadata['Exif.GPSInfo.GPSLongitude'])} "
+                f"{metadata['Exif.GPSInfo.GPSLongitudeRef']}"
+            )
 
-    orientation = metadata.get("Orientation", None)
+    orientation = get_first_existing_attr(
+        metadata,
+        [
+            "Exif.Image.Orientation",
+        ],
+    )
 
-    return FileMetadata(
+    if orientation is not None:
+        orientation = int(orientation)
+
+    return ImageMetadata(
         title=title,
         timestamp=timestamp,
         location=location,
@@ -239,20 +330,96 @@ def get_image_metadata(album_settings: AlbumSettings, file_path: Path) -> FileMe
     )
 
 
-def get_video_metadata(_file_path: Path) -> FileMetadata:
+def get_video_metadata(album_settings: AlbumSettings, file_path: Path) -> VideoMetadata:
     """Retrieve the title, timestamp, location, and orientation of a video."""
-    # TODO: Implement get_video_metadata
-    return FileMetadata(
-        title="TODO",
-        timestamp=None,
-        location=None,
-        orientation=None,
+    metadata = read_metadata(f"{file_path}.xmp")
+
+    title = get_first_existing_attr(
+        metadata,
+        [
+            "Iptc.Application2.ObjectName",
+            "Xmp.acdsee.caption",
+            "Xmp.dc.title",
+        ],
+    )
+
+    timestamp = None
+    if album_settings.show_timestamps:
+        timestamp_str = get_first_existing_attr(
+            metadata,
+            [
+                "Exif.Photo.DateTimeOriginal",
+                "Exif.Image.DateTime",
+                "Exif.Photo.DateTimeDigitized",
+            ],
+        )
+
+        if timestamp_str is not None:
+            # The date may be in the format YYYY:MM:DD
+            # If it is, change it to YYYY-MM-DD
+            if RE_DATE_HAS_COLONS.search(timestamp_str):
+                timestamp_str = timestamp_str.replace(":", "-", 2)
+
+            if not RE_ENDS_WITH_OFFSET.search(timestamp_str):
+                timestamp_str = f"{timestamp_str}{album_settings.default_time_offset}"
+
+            timestamp = datetime.fromisoformat(timestamp_str)
+        else:
+            # There was no EXIF DateTimeOriginal, so use the earlier of the file
+            # ctime and mtime
+            ctime = os.path.getctime(file_path)
+            mtime = os.path.getmtime(file_path)
+            timestamp = datetime.fromtimestamp(min(ctime, mtime))
+            timestamp = timestamp.replace(tzinfo=timezone.utc)
+
+    location = None
+    if not album_settings.strip_gps_data:
+        location = get_first_existing_attr(
+            metadata,
+            [
+                "Exif.Image.ImageDescription",
+                "Iptc.Application2.Caption",
+                "Xmp.acdsee.notes",
+                "Xmp.dc.description",
+                "Xmp.exif.UserComment",
+                "Xmp.tiff.ImageDescription",
+            ],
+        )
+
+        if (
+            location is None
+            and "Exif.GPSInfo.GPSLatitudeRef" in metadata
+            and "Exif.GPSInfo.GPSLatitude" in metadata
+            and "Exif.GPSInfo.GPSLongitudeRef" in metadata
+            and "Exif.GPSInfo.GPSLongitude" in metadata
+        ):
+            location = (
+                f"{get_gps_dms_form(metadata['Exif.GPSInfo.GPSLatitude'])} "
+                f"{metadata['Exif.GPSInfo.GPSLatitudeRef']} "
+                f"{get_gps_dms_form(metadata['Exif.GPSInfo.GPSLongitude'])} "
+                f"{metadata['Exif.GPSInfo.GPSLongitudeRef']}"
+            )
+
+    width = None
+    if "Exif.Image.ImageWidth" in metadata:
+        width = int(metadata["Exif.Image.ImageWidth"])
+
+    height = None
+    if "Exif.Image.ImageHeight" in metadata:
+        width = int(metadata["Exif.Image.ImageHeight"])
+
+    return VideoMetadata(
+        title=title,
+        timestamp=timestamp,
+        location=location,
+        width=width,
+        height=height,
     )
 
 
 def process_image_file(
     album_settings: AlbumSettings, file_path: Path
-) -> Optional[AlbumFile]:
+) -> Optional[ImageFile]:
     """Obtain image metadata, resize the image, and create a thumbnail."""
     filename = os.path.basename(file_path)
     logger.debug("Processing <%s>", filename)
@@ -324,7 +491,7 @@ def process_image_file(
     thumbnail_path = Path(os.path.join(album_settings.thumbnails_dir, filename))
     thumbnail_image.save(thumbnail_path)
 
-    return AlbumFile(
+    return ImageFile(
         url=urllib.parse.quote(f"{filename}"),
         thumbnail_url=urllib.parse.quote(f"thumbnails/{filename}"),
         filename=filename,
@@ -333,15 +500,100 @@ def process_image_file(
 
 
 def process_video_file(
-    _album_settings: AlbumSettings, _file_path: Path
-) -> Optional[AlbumFile]:
+    album_settings: AlbumSettings, file_path: Path
+) -> Optional[VideoFile]:
     """Obtain video metadata, resize the video, and create a thumbnail."""
-    # TODO: process_video_file
-    return None
+    filename = os.path.basename(file_path)
+    logger.debug("Processing <%s>", filename)
+
+    try:
+        metadata = get_video_metadata(album_settings, file_path)
+    except RuntimeError as error:
+        logger.warning("    Error: %s", error)
+        return None
+
+    logger.debug("    Title: %s", metadata.title)
+    logger.debug("    Timestamp: %s", metadata.timestamp)
+    logger.debug("    Location: %s", metadata.location)
+
+    final_path = Path(os.path.join(album_settings.gallery_dir, filename))
+
+    shutil.copy2(file_path, final_path)
+
+    # TODO: Create video thumbnail
+    # TODO: Srip GPS data from video if option is indicated
+
+    return VideoFile(
+        url=urllib.parse.quote(f"{filename}"),
+        thumbnail_url=urllib.parse.quote(f"thumbnails/{filename}.jpg"),
+        filename=filename,
+        metadata=metadata,
+    )
+
+
+def get_image_html(file: ImageFile, idx: int) -> str:
+    """Get the HTML tags for an image file."""
+    content_parts: List[str] = []
+    metadata = file.metadata
+
+    html_title = html.escape(str(metadata.title))
+
+    if metadata.title is not None:
+        alt_tag = f' alt="{html_title}" '
+    else:
+        alt_tag = f' alt="{html.escape(file.filename)}" '
+
+    content_parts.append(f'<a href="#file-{idx}"><img src="{file.url}"{alt_tag}></a>')
+
+    if metadata.title is not None:
+        content_parts.append(html_title)
+
+    if metadata.timestamp is not None:
+        content_parts.append(
+            f'<time datetime="{metadata.timestamp}">'
+            f'{metadata.timestamp.strftime("%-d %B %Y")}'
+            f"</time>"
+        )
+
+    if metadata.location is not None:
+        content_parts.append(
+            '<a href="https://duckduckgo.com/?iaxm=maps&q='
+            f"{urllib.parse.quote(metadata.location)}"
+            f'">🗺️ {html.escape(metadata.location)}</a>'
+        )
+
+    return "<br>".join(content_parts)
+
+
+def get_video_html(file: VideoFile) -> str:
+    """Get the HTML tags for a video file."""
+    content_parts: List[str] = []
+    metadata = file.metadata
+
+    content_parts.append(f'<video controls><source src="{file.url}"></video>')
+
+    if metadata.title is not None:
+        content_parts.append(html.escape(metadata.title))
+
+    if metadata.timestamp is not None:
+        content_parts.append(
+            f'<time datetime="{metadata.timestamp}">'
+            f'{metadata.timestamp.strftime("%-d %B %Y")}'
+            f"</time>"
+        )
+
+    if metadata.location is not None:
+        content_parts.append(
+            '<a href="https://duckduckgo.com/?iaxm=maps&q='
+            f"{urllib.parse.quote(metadata.location)}"
+            f'">🗺️ {html.escape(metadata.location)}</a>'
+        )
+
+    return "<br>".join(content_parts)
 
 
 def write_gallery_file(
-    album_settings: AlbumSettings, files: List[AlbumFile], path: Path
+    album_settings: AlbumSettings, files: List[Union[ImageFile, VideoFile]], path: Path
 ) -> None:
     """Generate an HTML file for a gallery."""
     with open(path, "w", encoding="utf-8") as index_file:
@@ -375,7 +627,7 @@ html {
         display: none;
     }
 
-    .file img {
+    .file img, .file video {
         max-width: 100%;
     }
 
@@ -402,7 +654,7 @@ html {
         display: none;
     }
 
-    .file img {
+    .file img, .file video {
         max-width: 100%;
     }
 
@@ -472,7 +724,7 @@ html {
         padding-top: 6em;
     }
 
-    .file img {
+    .file img, .file video {
         max-width: 100%;
         max-height: calc(100vh - 10.5em);
     }
@@ -522,43 +774,14 @@ html {
 
         # write files
         for file, idx in zip(files, range(1, len(files) + 1)):
-            metadata = file.metadata
-
-            html_title = html.escape(str(metadata.title))
-
-            if metadata.title is not None:
-                alt_tag = f' alt="{html_title}" '
-            else:
-                alt_tag = f' alt="{html.escape(album_settings.gallery_title)}" '
-
-            content_parts: List[str] = []
-
-            content_parts.append(
-                f'<a href="#file-{idx}">' f'<img src="{file.url}"{alt_tag}>' "</a>"
-            )
-
-            if metadata.title is not None:
-                content_parts.append(html_title)
-
-            if metadata.timestamp is not None:
-                content_parts.append(
-                    f'<time datetime="{metadata.timestamp}">'
-                    f'{metadata.timestamp.strftime("%d %B %Y")}'
-                    f"</time>"
-                )
-
-            if metadata.location is not None:
-                content_parts.append(
-                    '<a href="https://duckduckgo.com/?iaxm=maps&q='
-                    f"{urllib.parse.quote(metadata.location)}"
-                    f'">🗺️ {html.escape(metadata.location)}</a>'
-                )
-
-            contents = "<br>".join(content_parts)
+            if isinstance(file, ImageFile):
+                file_html = get_image_html(file, idx)
+            elif isinstance(file, VideoFile):
+                file_html = get_video_html(file)
 
             index_file.write(
                 f"""\
-      <p id="file-{idx}" class="file">{contents}</p>
+      <p id="file-{idx}" class="file">{file_html}</p>
 """
             )
 
@@ -632,12 +855,14 @@ def generate_album(image_dir_name: str) -> None:
     # 3) find and process all file
     file_paths = list(Path(image_dir_name).glob("*"))
 
-    files = []
+    files: List[Union[ImageFile, VideoFile]] = []
 
     for file_path in file_paths:
         # Ignore files that don't appear to be images
         if not is_image_file(file_path) and not is_video_file(file_path):
             continue
+
+        file: Optional[Union[ImageFile, VideoFile]]
 
         if is_image_file(file_path):
             file = process_image_file(album_settings, file_path)
@@ -651,7 +876,9 @@ def generate_album(image_dir_name: str) -> None:
 
     # 4) sort photos
     if album_settings.sort_key == "timestamp":
-        files.sort(key=lambda file: file.metadata.timestamp or datetime.now())
+        files.sort(
+            key=lambda file: file.metadata.timestamp or datetime.now(timezone.utc)
+        )
     elif album_settings.sort_key == "filename":
         files.sort(key=lambda file: file.filename)
 
@@ -698,7 +925,6 @@ def main() -> None:
     # landing page
     # By default, ignore directories that begin with .
 
-    # TODO: Support video files
     for image_dir_name in image_dir_names:
         generate_album(image_dir_name.rstrip("/\\"))
 
