@@ -730,7 +730,7 @@ html {
         width: calc(60% - 5em);
     }
 
-    nav img {
+    nav a {
         margin: 0.4em;
     }
 
