@@ -712,12 +712,17 @@ html {
         padding: 0;
     }
 
+    a {
+        color: #4ad;
+    }
+
     nav {
         display: none;
     }
 
     .file img, .file video {
         max-width: 100%;
+        max-height: calc(100vh - 4.5em);
     }
 
     p {
@@ -766,7 +771,7 @@ html {
         flex-wrap: wrap;
         align-items: flex-start;
         margin: -0.4em -0.4em 0;
-        overflow: scroll;
+        overflow: auto;
         position: fixed;
     }
 
