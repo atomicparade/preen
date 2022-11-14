@@ -6,14 +6,13 @@ import math
 import re
 import os
 import shutil
-import subprocess
 import sys
 import urllib.parse
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any, List, Optional, Union
 
 import pyexiv2  # type: ignore
 import yaml  # type: ignore
@@ -229,26 +228,6 @@ class VideoFile:
     metadata: VideoMetadata
 
 
-def fit_to_dimensions(
-    width: float, height: float, max_width: Optional[int], max_height: Optional[int]
-) -> Tuple[int, int]:
-    """Fit a rectangle to the given max width and height."""
-    aspect_ratio = width / height
-
-    if max_width is not None and width > max_width:
-        width = max_width
-        height = width / aspect_ratio
-
-    if max_height is not None and height > max_height:
-        height = max_height
-        width = height * aspect_ratio
-
-    width = math.floor(width)
-    height = math.floor(height)
-
-    return (width, height)
-
-
 def get_image_metadata(album_settings: AlbumSettings, file_path: Path) -> ImageMetadata:
     """Retrieve the title, timestamp, location, and orientation of an image."""
     metadata = read_metadata(file_path)
@@ -455,12 +434,7 @@ def process_image_file(
     if is_sideways_orientation(metadata.orientation):
         max_width, max_height = max_height, max_width
 
-    (final_width, final_height) = fit_to_dimensions(
-        image.width, image.height, max_width, max_height
-    )
-
-    if final_height != image.height:
-        image = image.resize((final_width, final_height))
+    image.thumbnail((max_width, max_height))
 
     # save to gallery/
     final_path = Path(os.path.join(album_settings.gallery_dir, filename))
@@ -471,20 +445,12 @@ def process_image_file(
 
     # create thumbnail
     image = orient_image(image, metadata.orientation)
-
-    (thumbnail_width, thumbnail_height) = fit_to_dimensions(
-        image.width,
-        image.height,
-        album_settings.thumbnail_width,
-        album_settings.thumbnail_height,
-    )
-
-    image = image.resize((thumbnail_width, thumbnail_height))
+    image.thumbnail((album_settings.thumbnail_width, album_settings.thumbnail_height))
 
     # centre the thumbnail in its container
     thumbnail_position = (
-        math.floor((album_settings.thumbnail_width - thumbnail_width) / 2),
-        math.floor((album_settings.thumbnail_height - thumbnail_height) / 2),
+        math.floor((album_settings.thumbnail_width - image.width) / 2),
+        math.floor((album_settings.thumbnail_height - image.height) / 2),
     )
 
     thumbnail_image = Image.new(
