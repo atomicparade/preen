@@ -175,14 +175,15 @@ def orient_image(image: Image, orientation: Optional[int]) -> Image:
 class AlbumSettings:
     """Store the settings for a photo album."""
 
-    gallery_title: str = ""
+    album_title: str = ""
+    public_album: bool = False
     max_width: Optional[int] = None
     max_height: Optional[int] = None
     thumbnail_width: int = 100
     thumbnail_height: int = 100
     strip_gps_data: bool = True
     default_time_offset: str = "+00:00"
-    gallery_dir: Path = Path()
+    album_dir: Path = Path()
     thumbnails_dir: Path = Path()
     show_timestamps: bool = True
     sort_key: str = "timestamp"
@@ -449,8 +450,8 @@ def process_image_file(
 
     image.thumbnail((max_width, max_height))
 
-    # save to gallery/
-    final_path = Path(os.path.join(album_settings.gallery_dir, filename))
+    # save to album/
+    final_path = Path(os.path.join(album_settings.album_dir, filename))
     image.save(final_path, exif=image.getexif())
 
     if album_settings.strip_gps_data:
@@ -473,7 +474,7 @@ def process_image_file(
     )
     thumbnail_image.paste(image, thumbnail_position)
 
-    # save thumbnail to gallery/thumbnails/
+    # save thumbnail to album/thumbnails/
     thumbnail_path = Path(os.path.join(album_settings.thumbnails_dir, filename))
     thumbnail_image.save(thumbnail_path)
 
@@ -507,7 +508,7 @@ def process_video_file(
         "" if is_sideways_orientation(metadata.orientation) else "not ",
     )
 
-    final_path = Path(os.path.join(album_settings.gallery_dir, filename))
+    final_path = Path(os.path.join(album_settings.album_dir, filename))
 
     shutil.copy2(file_path, final_path)
 
@@ -533,7 +534,7 @@ def process_video_file(
     )
     thumbnail_image.paste(image, thumbnail_position)
 
-    # save thumbnail to gallery/thumbnails/
+    # save thumbnail to album/thumbnails/
     thumbnail_path = Path(
         os.path.join(album_settings.thumbnails_dir, f"{filename}.jpg")
     )
@@ -654,10 +655,10 @@ def get_video_html(file: VideoFile) -> str:
     return "<br>".join(content_parts)
 
 
-def write_gallery_file(
+def write_album_file(
     album_settings: AlbumSettings, files: List[Union[ImageFile, VideoFile]], path: Path
 ) -> None:
-    """Generate an HTML file for a gallery."""
+    """Generate an HTML file for an album."""
     with open(path, "w", encoding="utf-8") as index_file:
         # write page header
         index_file.write(
@@ -666,10 +667,10 @@ def write_gallery_file(
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>{album_settings.gallery_title}</title>
+  <title>{album_settings.album_title}</title>
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
-  <meta property="og:title" content="{album_settings.gallery_title}">
-  <meta name="twitter:title" content="{album_settings.gallery_title}">
+  <meta property="og:title" content="{album_settings.album_title}">
+  <meta name="twitter:title" content="{album_settings.album_title}">
 """
         )
 
@@ -819,7 +820,7 @@ html {
             f"""\
 </head>
 <body>
-  <h1>{album_settings.gallery_title}</h1>
+  <h1>{album_settings.album_title}</h1>
   <div id="album">
     <nav>
 """
@@ -866,12 +867,17 @@ def generate_album(image_dir_name: str) -> None:
     logger.debug("image_dir_name = %s", image_dir_name)
 
     #  1) read album-settings.yaml file, if present
-    #      - gallery_title = {cwd basename}
+    #      - album_title = {cwd basename}
+    #      - public_album = False - whether or not album is shown on gallery page
     #      - max_width = None  - Files will be resized to fit the maximum
     #      - max_height = None - width and height, if specified
     #      - thumbnail_width = 100
     #      - thumbnail_height = 100
-    #      - strip_gps_data = True
+    #      - strip_gps_data = True - Whether or not to remove GPS data from images
+    #      - default_time_offset = "+00:00" - Default time offset, if not in metadata
+    #      - show_timestamps = True - Whether or not to show image/video timestamps
+    #      - sort_key = "timestamp" - Can be "filename" or "timestamp"
+
     album_settings = AlbumSettings()
 
     album_settings_file_path = os.path.join(image_dir_name, "album-settings.yaml")
@@ -882,10 +888,10 @@ def generate_album(image_dir_name: str) -> None:
         ) as album_settings_file:
             settings = yaml.safe_load(album_settings_file)
 
-        if "gallery_title" in settings:
-            album_settings.gallery_title = settings["gallery_title"]
+        if "album_title" in settings:
+            album_settings.album_title = settings["album_title"]
         else:
-            album_settings.gallery_title = os.path.basename(image_dir_name)
+            album_settings.album_title = os.path.basename(image_dir_name)
 
         for attr_name in [
             "max_width",
@@ -900,21 +906,21 @@ def generate_album(image_dir_name: str) -> None:
             if attr_name in settings:
                 setattr(album_settings, attr_name, settings[attr_name])
     except FileNotFoundError:
-        album_settings.gallery_title = os.path.basename(image_dir_name)
+        album_settings.album_title = os.path.basename(image_dir_name)
 
     logger.debug("%s", album_settings)
 
-    # 2) create gallery/ and gallery/thumbnails/
-    gallery_dir_name = os.path.join(image_dir_name, "gallery")
-    thumbnails_dir_name = os.path.join(gallery_dir_name, "thumbnails")
+    # 2) create album/ and album/thumbnails/
+    album_dir_name = os.path.join(image_dir_name, "album")
+    thumbnails_dir_name = os.path.join(album_dir_name, "thumbnails")
 
-    gallery_dir = Path(gallery_dir_name)
+    album_dir = Path(album_dir_name)
     thumbnails_dir = Path(thumbnails_dir_name)
 
-    gallery_dir.mkdir(mode=0o755, exist_ok=True)
+    album_dir.mkdir(mode=0o755, exist_ok=True)
     thumbnails_dir.mkdir(mode=0o755, exist_ok=True)
 
-    album_settings.gallery_dir = gallery_dir
+    album_settings.album_dir = album_dir
     album_settings.thumbnails_dir = thumbnails_dir
 
     # 3) find and process all file
@@ -947,9 +953,9 @@ def generate_album(image_dir_name: str) -> None:
     elif album_settings.sort_key == "filename":
         files.sort(key=lambda file: file.filename)
 
-    # 5) create gallery index.html
-    gallery_file_path = Path(os.path.join(gallery_dir, "index.html"))
-    write_gallery_file(album_settings, files, gallery_file_path)
+    # 5) create album index.html
+    album_file_path = Path(os.path.join(album_dir, "index.html"))
+    write_album_file(album_settings, files, album_file_path)
 
 
 def main() -> None:
@@ -983,11 +989,11 @@ def main() -> None:
     if len(image_dir_names) == 0:
         image_dir_names.append(os.getcwd())
 
-    # TODO: If iterating through every directory, create a landing page that
-    # links to each gallery
-    # However, the galleries should be stored in directories at the same level
-    # of the directory containing the landing page, NOT in a subdirectory of the
-    # landing page
+    # TODO: If iterating through every directory, create a gallery page that
+    # links to each album
+    # However, the albums should be stored in directories at the same level
+    # of the directory containing the gallery page, NOT in a subdirectory of the
+    # gallery page
     # By default, ignore directories that begin with .
 
     for image_dir_name in image_dir_names:
