@@ -179,261 +179,6 @@ def orient_image(image: Image, orientation: Optional[int]) -> Image:
     return image
 
 
-# def get_image_metadata(album_settings: AlbumSettings, file_path: Path) -> ImageMetadata:
-#     """Retrieve the title, timestamp, location, and orientation of an image."""
-#     metadata = read_metadata(file_path)
-
-#     title = get_first_existing_attr(
-#         metadata,
-#         [
-#             "Xmp.dc.title",
-#             "Xmp.acdsee.caption",
-#             "Iptc.Application2.ObjectName",
-#         ],
-#     )
-
-#     timestamp = None
-#     if album_settings.show_timestamps:
-#         timestamp_str = get_first_existing_attr(
-#             metadata,
-#             [
-#                 "Exif.Photo.DateTimeOriginal",
-#                 "Exif.Image.DateTime",
-#                 "Exif.Photo.DateTimeDigitized",
-#             ],
-#         )
-
-#         if timestamp_str is not None:
-#             # The date may be in the format YYYY:MM:DD
-#             # If it is, change it to YYYY-MM-DD
-#             if RE_DATE_HAS_COLONS.search(timestamp_str):
-#                 timestamp_str = timestamp_str.replace(":", "-", 2)
-
-#             if not RE_ENDS_WITH_OFFSET.search(timestamp_str):
-#                 timestamp_str = f"{timestamp_str}{album_settings.default_time_offset}"
-
-#             timestamp = datetime.fromisoformat(timestamp_str)
-#         else:
-#             # There was no EXIF DateTimeOriginal, so use the earlier of the file
-#             # ctime and mtime
-#             ctime = os.path.getctime(file_path)
-#             mtime = os.path.getmtime(file_path)
-#             timestamp = datetime.fromtimestamp(min(ctime, mtime))
-#             timestamp = timestamp.replace(tzinfo=timezone.utc)
-
-#     location = None
-#     if not album_settings.strip_gps_data:
-#         location = get_first_existing_attr(
-#             metadata,
-#             [
-#                 "Exif.Image.ImageDescription",
-#                 "Iptc.Application2.Caption",
-#                 "Xmp.acdsee.notes",
-#                 "Xmp.dc.description",
-#                 "Xmp.exif.UserComment",
-#                 "Xmp.tiff.ImageDescription",
-#             ],
-#         )
-
-#         if (
-#             location is None
-#             and "Exif.GPSInfo.GPSLatitudeRef" in metadata
-#             and "Exif.GPSInfo.GPSLatitude" in metadata
-#             and "Exif.GPSInfo.GPSLongitudeRef" in metadata
-#             and "Exif.GPSInfo.GPSLongitude" in metadata
-#         ):
-#             location = (
-#                 f"{get_gps_dms_form(metadata['Exif.GPSInfo.GPSLatitude'])} "
-#                 f"{metadata['Exif.GPSInfo.GPSLatitudeRef']} "
-#                 f"{get_gps_dms_form(metadata['Exif.GPSInfo.GPSLongitude'])} "
-#                 f"{metadata['Exif.GPSInfo.GPSLongitudeRef']}"
-#             )
-
-#     orientation = get_first_existing_attr(
-#         metadata,
-#         [
-#             "Exif.Image.Orientation",
-#         ],
-#     )
-
-#     if orientation is not None:
-#         orientation = int(orientation)
-
-#     return ImageMetadata(
-#         title=title,
-#         timestamp=timestamp,
-#         location=location,
-#         orientation=orientation,
-#     )
-
-
-# def get_video_metadata(album_settings: AlbumSettings, file_path: Path) -> VideoMetadata:
-#     """Retrieve the title, timestamp, location, and orientation of a video."""
-#     metadata = read_metadata(f"{file_path}.xmp")
-
-#     title = get_first_existing_attr(
-#         metadata,
-#         [
-#             "Iptc.Application2.ObjectName",
-#             "Xmp.acdsee.caption",
-#             "Xmp.dc.title",
-#         ],
-#     )
-
-#     timestamp = None
-#     if album_settings.show_timestamps:
-#         timestamp_str = get_first_existing_attr(
-#             metadata,
-#             [
-#                 "Exif.Photo.DateTimeOriginal",
-#                 "Exif.Image.DateTime",
-#                 "Exif.Photo.DateTimeDigitized",
-#             ],
-#         )
-
-#         if timestamp_str is not None:
-#             # The date may be in the format YYYY:MM:DD
-#             # If it is, change it to YYYY-MM-DD
-#             if RE_DATE_HAS_COLONS.search(timestamp_str):
-#                 timestamp_str = timestamp_str.replace(":", "-", 2)
-
-#             if not RE_ENDS_WITH_OFFSET.search(timestamp_str):
-#                 timestamp_str = f"{timestamp_str}{album_settings.default_time_offset}"
-
-#             timestamp = datetime.fromisoformat(timestamp_str)
-#         else:
-#             # There was no EXIF DateTimeOriginal, so use the earlier of the file
-#             # ctime and mtime
-#             ctime = os.path.getctime(file_path)
-#             mtime = os.path.getmtime(file_path)
-#             timestamp = datetime.fromtimestamp(min(ctime, mtime))
-#             timestamp = timestamp.replace(tzinfo=timezone.utc)
-
-#     location = None
-#     if not album_settings.strip_gps_data:
-#         location = get_first_existing_attr(
-#             metadata,
-#             [
-#                 "Exif.Image.ImageDescription",
-#                 "Iptc.Application2.Caption",
-#                 "Xmp.acdsee.notes",
-#                 "Xmp.dc.description",
-#                 "Xmp.exif.UserComment",
-#                 "Xmp.tiff.ImageDescription",
-#             ],
-#         )
-
-#         if (
-#             location is None
-#             and "Exif.GPSInfo.GPSLatitudeRef" in metadata
-#             and "Exif.GPSInfo.GPSLatitude" in metadata
-#             and "Exif.GPSInfo.GPSLongitudeRef" in metadata
-#             and "Exif.GPSInfo.GPSLongitude" in metadata
-#         ):
-#             location = (
-#                 f"{get_gps_dms_form(metadata['Exif.GPSInfo.GPSLatitude'])} "
-#                 f"{metadata['Exif.GPSInfo.GPSLatitudeRef']} "
-#                 f"{get_gps_dms_form(metadata['Exif.GPSInfo.GPSLongitude'])} "
-#                 f"{metadata['Exif.GPSInfo.GPSLongitudeRef']}"
-#             )
-
-#     width = None
-#     if "Exif.Image.ImageWidth" in metadata:
-#         width = int(metadata["Exif.Image.ImageWidth"])
-
-#     height = None
-#     if "Exif.Image.ImageHeight" in metadata:
-#         width = int(metadata["Exif.Image.ImageHeight"])
-
-#     orientation = get_first_existing_attr(
-#         metadata,
-#         [
-#             "Exif.Image.Orientation",
-#         ],
-#     )
-
-#     if orientation is not None:
-#         orientation = int(orientation)
-
-#     return VideoMetadata(
-#         title=title,
-#         timestamp=timestamp,
-#         location=location,
-#         width=width,
-#         height=height,
-#         orientation=orientation,
-#     )
-
-
-# def process_image_file(
-#     album_settings: AlbumSettings, file_path: Path
-# ) -> Optional[ImageFile]:
-#     """Obtain image metadata, resize the image, and create a thumbnail."""
-#     filename = os.path.basename(file_path)
-#     logger.debug("Processing <%s>", filename)
-
-#     try:
-#         image = Image.open(file_path)
-#     except UnidentifiedImageError:
-#         logger.warning("    PIL was unable to read image at path <%s>", file_path)
-#         return None
-
-#     metadata = get_image_metadata(album_settings, file_path)
-
-#     logger.debug("    Title: %s", metadata.title)
-#     logger.debug("    Timestamp: %s", metadata.timestamp)
-#     logger.debug("    Location: %s", metadata.location)
-#     logger.debug(
-#         "    Orientation: %s (%ssideways)",
-#         metadata.orientation,
-#         "" if is_sideways_orientation(metadata.orientation) else "not ",
-#     )
-
-#     # resize photos to maximum dimensions
-#     max_width = album_settings.max_width
-#     max_height = album_settings.max_height
-
-#     if is_sideways_orientation(metadata.orientation):
-#         max_width, max_height = max_height, max_width
-
-#     image.thumbnail((max_width, max_height))
-
-#     # save to album/
-#     final_path = Path(os.path.join(album_settings.album_dir, filename))
-#     image.save(final_path, exif=image.getexif())
-
-#     if album_settings.strip_gps_data:
-#         strip_gps_data(final_path)
-
-#     # create thumbnail
-#     image = orient_image(image, metadata.orientation)
-#     image.thumbnail((album_settings.thumbnail_width, album_settings.thumbnail_height))
-
-#     # centre the thumbnail in its container
-#     thumbnail_position = (
-#         math.floor((album_settings.thumbnail_width - image.width) / 2),
-#         math.floor((album_settings.thumbnail_height - image.height) / 2),
-#     )
-
-#     thumbnail_image = Image.new(
-#         "RGB",
-#         (album_settings.thumbnail_width, album_settings.thumbnail_height),
-#         (0, 0, 0),
-#     )
-#     thumbnail_image.paste(image, thumbnail_position)
-
-#     # save thumbnail to album/thumbnails/
-#     thumbnail_path = Path(os.path.join(album_settings.thumbnails_dir, filename))
-#     thumbnail_image.save(thumbnail_path)
-
-#     return ImageFile(
-#         url=urllib.parse.quote(f"{filename}"),
-#         thumbnail_url=urllib.parse.quote(f"thumbnails/{filename}"),
-#         filename=filename,
-#         metadata=metadata,
-#     )
-
-
 # def process_video_file(
 #     album_settings: AlbumSettings, file_path: Path
 # ) -> Optional[VideoFile]:
@@ -638,70 +383,188 @@ class ImageFile:
     """Store info for a file needed to generate the HTML album."""
 
     path: Path
+    settings: PageSettings
 
     url: str
     thumbnail_url: str
+    filename: str
 
-    title: Optional[str]
-    timestamp: Optional[datetime]
-    location: Optional[str]  # Description, caption, or GPS coordinates
-    orientation: Optional[int]
+    title: Optional[str] = None
+    timestamp: Optional[datetime] = None
+    location: Optional[str] = None  # Description, caption, or GPS coordinates
+    orientation: Optional[int] = None
 
-    def __init__(self, path: Path):
+    width: int
+    height: int
+
+    def __init__(self, path: Path, settings: PageSettings):
         self.path = path
+        self.settings = settings
 
-    def process(
-        self, settings: PageSettings, output_path: Path, thumbnails_path: Path
-    ) -> None:
-        """Resize image if necessary, generate thumbnail, and copy to output dir."""
-
-        self.url = (
-            self.path.name
-        )  # TODO: handle filename change for MP$-converted files
+        self.url = path.name
         self.thumbnail_url = f"{THUMBNAILS_DIR_NAME}/{self.url}"
+        self.filename = path.stem
 
-    def get_thumbnail_html(self) -> str:
+        metadata = read_metadata(path)
+
+        self.title = get_first_existing_attr(
+            metadata,
+            [
+                "Xmp.dc.title",
+                "Xmp.acdsee.caption",
+                "Iptc.Application2.ObjectName",
+            ],
+        )
+
+        if settings.show_timestamps:
+            timestamp_str = get_first_existing_attr(
+                metadata,
+                [
+                    "Exif.Photo.DateTimeOriginal",
+                    "Exif.Image.DateTime",
+                    "Exif.Photo.DateTimeDigitized",
+                ],
+            )
+
+            if timestamp_str is not None:
+                # The date may be in the format YYYY:MM:DD
+                # If it is, change it to YYYY-MM-DD
+                if RE_DATE_HAS_COLONS.search(timestamp_str):
+                    timestamp_str = timestamp_str.replace(":", "-", 2)
+
+                if not RE_ENDS_WITH_OFFSET.search(timestamp_str):
+                    timestamp_str = f"{timestamp_str}{settings.default_time_offset}"
+
+                self.timestamp = datetime.fromisoformat(timestamp_str)
+
+        if not settings.strip_gps_data:
+            self.location = get_first_existing_attr(
+                metadata,
+                [
+                    "Exif.Image.ImageDescription",
+                    "Iptc.Application2.Caption",
+                    "Xmp.acdsee.notes",
+                    "Xmp.dc.description",
+                    "Xmp.exif.UserComment",
+                    "Xmp.tiff.ImageDescription",
+                ],
+            )
+
+            if (
+                self.location is None
+                and "Exif.GPSInfo.GPSLatitudeRef" in metadata
+                and "Exif.GPSInfo.GPSLatitude" in metadata
+                and "Exif.GPSInfo.GPSLongitudeRef" in metadata
+                and "Exif.GPSInfo.GPSLongitude" in metadata
+            ):
+                self.location = (
+                    f"{get_gps_dms_form(metadata['Exif.GPSInfo.GPSLatitude'])} "
+                    f"{metadata['Exif.GPSInfo.GPSLatitudeRef']} "
+                    f"{get_gps_dms_form(metadata['Exif.GPSInfo.GPSLongitude'])} "
+                    f"{metadata['Exif.GPSInfo.GPSLongitudeRef']}"
+                )
+
+        orientation = get_first_existing_attr(
+            metadata,
+            [
+                "Exif.Image.Orientation",
+            ],
+        )
+
+        if orientation is not None:
+            self.orientation = int(orientation)
+
+    def process(self, output_dir_path: Path, thumbnails_dir_path: Path) -> None:
+        """Resize image if necessary, generate thumbnail, and copy to output dir."""
+        image = Image.open(self.path)
+
+        # Resize photos to maximum dimensions
+        max_image_width = self.settings.max_image_width
+        max_image_height = self.settings.max_image_height
+
+        if is_sideways_orientation(self.orientation):
+            max_image_width, max_image_height = max_image_height, max_image_width
+
+        image.thumbnail((max_image_width, max_image_height))
+
+        self.width = image.width
+        self.height = image.height
+
+        # Save iamge
+        output_path = output_dir_path.joinpath(self.url)
+        image.save(output_path, exif=image.getexif())
+
+        if self.settings.strip_gps_data:
+            strip_gps_data(output_path)
+
+        # Create thumbnail
+        image = orient_image(image, self.orientation)
+        image.thumbnail((self.settings.thumbnail_width, self.settings.thumbnail_height))
+
+        # Centre the thumbnail in its container
+        thumbnail_position = (
+            math.floor((self.settings.thumbnail_width - image.width) / 2),
+            math.floor((self.settings.thumbnail_height - image.height) / 2),
+        )
+
+        thumbnail_image = Image.new(
+            "RGB",
+            (self.settings.thumbnail_width, self.settings.thumbnail_height),
+            (0, 0, 0),
+        )
+        thumbnail_image.paste(image, thumbnail_position)
+
+        # Save thumbnail
+        thumbnail_path = thumbnails_dir_path.joinpath(self.url)
+        thumbnail_image.save(thumbnail_path)
+
+    def get_thumbnail_html(self, idx: int) -> str:
         """Generate HTML snippet for the image's thumbnail."""
 
-        #     if metadata.title is not None:
-        #         alt_tag = f'alt="{html.escape(metadata.title)}" '
-        #     else:
-        #         alt_tag = f'alt="{html.escape(file.filename)}" '
+        if self.title is not None:
+            alt_tag = f'alt="{html.escape(self.title)}" '
+        else:
+            alt_tag = f'alt="{html.escape(self.filename)}" '
 
-        #     img_tag = (
-        #         f'<img src="{file.thumbnail_url}" '
-        #         f"{alt_tag}"
-        #         f'width="{album_settings.thumbnail_width}" '
-        #         f'height="{album_settings.thumbnail_height}">'
-        #     )
+        img_tag = (
+            f'<img src="{self.thumbnail_url}" '
+            f"{alt_tag}"
+            f'width="{self.settings.thumbnail_width}" '
+            f'height="{self.settings.thumbnail_height}">'
+        )
 
-        #     return f'<a href="#file-{idx}">{img_tag}</a>'
-        return "TODO"
+        return f'<a href="#file-{idx}">{img_tag}</a>'
 
-    def get_html(self) -> str:
+    def get_html(self, idx: int) -> str:
         """Generate HTML snippet for the image."""
 
-        #     if metadata.title is not None:
-        #         alt_tag = f'alt="{html.escape(metadata.title)}" '
-        #     else:
-        #         alt_tag = f'alt="{html.escape(file.filename)}" '
+        parts = []
 
-        #     img_tag = (
-        #         f'<img src="{file.thumbnail_url}" '
-        #         f"{alt_tag}"
-        #         f'width="{album_settings.thumbnail_width}" '
-        #         f'height="{album_settings.thumbnail_height}">'
-        #     )
+        if self.title is not None:
+            alt_tag = f'alt="{html.escape(self.title)}"'
+        else:
+            alt_tag = f'alt="{html.escape(self.filename)}"'
 
-        # if metadata.location is not None:
-        #     content_parts.append(
-        #         '<a href="https://duckduckgo.com/?iaxm=maps&q='
-        #         f"{urllib.parse.quote(metadata.location)}"
-        #         f'">🗺️ {html.escape(metadata.location)}</a>'
-        #     )
+        parts.append(f'<a href="{self.url}"><img src="{self.url}" ' f"{alt_tag}></a>")
 
-        #     return f'<a href="#file-{idx}">{img_tag}</a>'
-        return "TODO"
+        if self.title is not None:
+            parts.append(self.title)
+
+        if self.timestamp is not None:
+            parts.append(
+                f'<time datetime="{self.timestamp}">'
+                f'{self.timestamp.strftime("%-d %B %Y")}'
+                f"</time>"
+            )
+
+        if self.location is not None:
+            parts.append(
+                '<a href="https://duckduckgo.com/?iaxm=maps&q='
+                f"{urllib.parse.quote(self.location)}"
+                f'">🗺️ {html.escape(self.location)}</a>'
+            )
+
+        return "<br>".join(parts)
 
 
 class VideoFile:
@@ -719,12 +582,10 @@ class VideoFile:
     height: Optional[int]
     orientation: Optional[int]
 
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, settings: PageSettings):
         self.path = path
 
-    def process(
-        self, settings: PageSettings, output_path: Path, thumbnails_path: Path
-    ) -> None:
+    def process(self, output_path: Path, thumbnails_path: Path) -> None:
         """Re-encode video if necessary, generate thumbnail, and copy to output dir."""
 
         self.url = (
@@ -732,7 +593,7 @@ class VideoFile:
         )  # TODO: handle filename change for MP$-converted files
         self.thumbnail_url = f"{THUMBNAILS_DIR_NAME}/{self.url}"
 
-    def get_thumbnail_html(self) -> str:
+    def get_thumbnail_html(self, idx: int) -> str:
         """Generate HTML snippet for the video's thumbnail."""
 
         #     if metadata.title is not None:
@@ -750,7 +611,7 @@ class VideoFile:
         #     return f'<a href="#file-{idx}" class="video-thumbnail">{img_tag}</a>'
         return "TODO"
 
-    def get_html(self) -> str:
+    def get_html(self, idx: int) -> str:
         """Generate HTML snippet for the video."""
 
         # content_parts.append(f'<video controls><source src="{file.url}"></video>')
@@ -844,16 +705,17 @@ class Album:
 
         for file_path in Path(self.path).glob("*"):
             if is_image_file(file_path):
-                image_file = ImageFile(file_path)
-                image_file.process(
-                    self.settings, self.output_path, self.thumbnails_path
-                )
-                files.append(image_file)
+                try:
+                    image_file = ImageFile(file_path, self.settings)
+                    image_file.process(self.output_path, self.thumbnails_path)
+                    files.append(image_file)
+                except UnidentifiedImageError:
+                    # TODO: Figure out what kind of error pyexiv2 will throw if nonexistent
+                    # TODO: Print some kind of error message
+                    pass
             elif is_video_file(file_path):
-                video_file = VideoFile(file_path)
-                video_file.process(
-                    self.settings, self.output_path, self.thumbnails_path
-                )
+                video_file = VideoFile(file_path, self.settings)
+                video_file.process(self.output_path, self.thumbnails_path)
                 files.append(video_file)
 
         self.write_album_index(files)
@@ -883,10 +745,6 @@ body {{
 @media screen {{
     a {{
         color: {self.settings.link_color}
-    }}
-
-    p.return-to-gallery {{
-        text-align: left;
     }}
 }}
 """
@@ -935,14 +793,14 @@ html {
         display: none;
     }
 
+    .file {
+        text-align: center;
+        margin: 0 0 2em;
+    }
+
     .file img, .file video {
         max-width: 100%;
         max-height: calc(100vh - 4.5em);
-    }
-
-    p {
-        text-align: center;
-        margin: 0 0 2em;
     }
 }
 
@@ -994,7 +852,7 @@ html {
     }
 
     #photos {
-        margin-top: 6em;
+        margin-top: 7rem;
         margin-left: calc(40% + 1em);
         width: calc(60% - 5em);
     }
@@ -1018,10 +876,10 @@ html {
         height: 1.4em;
     }
 
-    p {
+    .file {
         text-align: center;
-        margin: -6em 0 2em;
-        padding-top: 6em;
+        margin: -7rem 0 2em;
+        padding-top: 7em;
     }
 
     .file img, .file video {
@@ -1032,6 +890,8 @@ html {
   </style>
 """
             )
+
+            # TODO: Figure out why #photos div is not aligned to top
 
             index_file.write(
                 f"""\
@@ -1046,14 +906,9 @@ html {
 
             # TODO: Put placeholder here if there are no files
 
-            # TODO: # write thumbnails
-            # for file, idx in zip(files, range(1, len(files) + 1)):
-            #     if isinstance(file, ImageFile):
-            #         thumbnail_html = get_image_thumbnail_html(album_settings, file, idx)
-            #     elif isinstance(file, VideoFile):
-            #         thumbnail_html = get_video_thumbnail_html(album_settings, file, idx)
-
-            #     index_file.write(f"{thumbnail_html}\n")
+            for file, idx in zip(files, range(1, len(files) + 1)):
+                thumbnail_html = file.get_thumbnail_html(idx)
+                index_file.write(f"      {thumbnail_html}\n")
 
             index_file.write(
                 """\
@@ -1062,14 +917,11 @@ html {
 """
             )
 
-            # TODO: # write files
-            # for file, idx in zip(files, range(1, len(files) + 1)):
-            #     if isinstance(file, ImageFile):
-            #         file_html = get_image_html(file, idx)
-            #     elif isinstance(file, VideoFile):
-            #         file_html = get_video_html(file)
+            # TODO: Put placeholder here if there are no files
 
-            #     index_file.write(f'<p id="file-{idx}" class="file">{file_html}</p>\n')
+            for file, idx in zip(files, range(1, len(files) + 1)):
+                file_html = file.get_html(idx)
+                index_file.write(f'      <p id="file-{idx}" class="file">{file_html}</p>\n')
 
             index_file.write(
                 """\
