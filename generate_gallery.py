@@ -197,13 +197,12 @@ class PageSettings:
     default_time_offset: str = "+00:00"
     show_timestamps: bool = True
     sort_key: str = "timestamp"
-    foreground_color: str = "#eeeeee"  # TODO: Use this value for the gallery
-    background_color: str = "#333333"  # TODO: Use this value for the gallery
-    link_color: str = "#44aadd"  # TODO: Use this value for the gallery
+    foreground_color: str = "#eeeeee"
+    background_color: str = "#333333"
+    link_color: str = "#44aadd"
 
     def clone(self):
         """Create a copy of the settings, except for the title and output directory name."""
-
         copy = PageSettings()
 
         for attr in dir(self):
@@ -218,7 +217,6 @@ class PageSettings:
 
     def debug_print(self):
         """Log the settings."""
-
         for attr in dir(self):
             if not (attr.startswith("__") or callable(getattr(self, attr))):
                 logger.debug("%24s = %s", attr, getattr(self, attr))
@@ -341,9 +339,11 @@ class ImageFile:
         self.width = image.width
         self.height = image.height
 
-        # Save iamge
+        # Save image
         output_path = output_dir_path.joinpath(self.url)
-        image.save(output_path, exif=image.getexif())
+
+        if not output_path.exists():
+            image.save(output_path, exif=image.getexif())
 
         if self.settings.strip_gps_data:
             strip_gps_data(output_path)
@@ -367,7 +367,9 @@ class ImageFile:
 
         # Save thumbnail
         thumbnail_path = thumbnails_dir_path.joinpath(self.thumbnail_filename)
-        thumbnail_image.save(thumbnail_path)
+
+        if not thumbnail_path.exists():
+            thumbnail_image.save(thumbnail_path)
 
     def get_thumbnail_html(self, idx: int) -> str:
         """Generate HTML snippet for the image's thumbnail."""
@@ -523,7 +525,8 @@ class VideoFile:
 
         output_path = output_path.joinpath(self.url)
 
-        shutil.copy2(self.path, output_path)
+        if not output_path.exists():
+            shutil.copy2(self.path, output_path)
 
         # Create video thumbnail
         container = av.open(str(self.path))
@@ -548,7 +551,9 @@ class VideoFile:
 
         # Save thumbnail
         thumbnail_path = Path(thumbnails_dir_path.joinpath(self.thumbnail_filename))
-        thumbnail_image.save(thumbnail_path)
+
+        if not thumbnail_path.exists():
+            thumbnail_image.save(thumbnail_path)
 
     def get_thumbnail_html(self, idx: int) -> str:
         """Generate HTML snippet for the video's thumbnail."""
@@ -709,6 +714,7 @@ body {{
         color: {self.settings.link_color}
     }}
 }}
+
 """
             )
 
@@ -853,48 +859,63 @@ html {
 """
             )
 
-            # TODO: Figure out why #photos div is not aligned to top
-
             index_file.write(
                 f"""\
 </head>
 <body>
   <h1>{self.settings.title}</h1>
-  <p class="return-to-gallery"><a href="..">Return to gallery</a></p>
+  <p class="return-to-gallery"><a href="../index.html">Return to gallery</a></p>
+"""
+            )
+
+            if len(files) == 0:
+                index_file.write(
+                    """\
+  <p>This album does not contain any photos or videos.</p>
+"""
+                )
+            else:
+                index_file.write(
+                    """\
   <div id="album">
     <nav>
 """
-            )
+                )
 
-            # TODO: Put placeholder here if there are no files
+                for file, idx in zip(files, range(1, len(files) + 1)):
+                    thumbnail_html = file.get_thumbnail_html(idx)
+                    index_file.write(f"      {thumbnail_html}\n")
 
-            for file, idx in zip(files, range(1, len(files) + 1)):
-                thumbnail_html = file.get_thumbnail_html(idx)
-                index_file.write(f"      {thumbnail_html}\n")
-
-            index_file.write(
-                """\
+                index_file.write(
+                    """\
     </nav>
     <div id="photos">
 """
-            )
+                )
 
-            # TODO: Put placeholder here if there are no files
+                for file, idx in zip(files, range(1, len(files) + 1)):
+                    file_html = file.get_html()
+                    index_file.write(
+                        f'      <p id="file-{idx}" class="file">{file_html}</p>\n'
+                    )
 
-            for file, idx in zip(files, range(1, len(files) + 1)):
-                file_html = file.get_html()
                 index_file.write(
-                    f'      <p id="file-{idx}" class="file">{file_html}</p>\n'
+                    """\
+    </div>
+  </div>
+"""
                 )
 
             index_file.write(
                 """\
-    </div>
-  </div>
 </body>
 </html>
 """
             )
+
+    def get_html(self):
+        """Return the HTML tag for navigating to this album."""
+        return f'<a href="{self.settings.output_directory_name}/index.html">{self.settings.title}</a>'
 
 
 class Gallery:
@@ -963,13 +984,148 @@ class Gallery:
                 except SettingsFileError as err:
                     logger.error("Unable to generate album: %s", err)
 
-        # TODO: Sort the albums
+        albums.sort(key=lambda album: album.settings.title)
 
-        if len(albums) == 0:
-            pass
-            # TODO: Then there are no public albums
+        self.write_gallery_index(albums)
 
-        # TODO: Generate index.html
+    def write_gallery_index(self, albums: List[Album]):
+        """Generate an HTML file for an album."""
+        index_file_path = self.output_path.joinpath("index.html")
+
+        with open(index_file_path, "w", encoding="utf-8") as index_file:
+            index_file.write(
+                f"""\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{self.settings.title}</title>
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta property="og:title" content="{self.settings.title}">
+  <meta name="twitter:title" content="{self.settings.title}">
+  <style>
+body {{
+    color: {self.settings.foreground_color};
+    background: {self.settings.background_color};
+    font-family: sans-serif;
+}}
+
+@media screen {{
+    a {{
+        color: {self.settings.link_color}
+    }}
+}}
+
+"""
+            )
+
+            index_file.write(
+                """\
+html {
+    scroll-behavior: smooth;
+}
+
+@media
+    screen and (max-width: 768px),
+
+    /* Tablets and smartphones */
+    screen and (hover: none)
+{
+    body {
+        margin: 1em;
+        padding: 0;
+    }
+
+    h1 {
+        margin-bottom: 0.7rem;
+    }
+
+    nav ul {
+        margin: 0;
+        padding: 0;
+        line-height: 2em;
+    }
+
+    li {
+        list-style: none;
+    }
+}
+
+@media
+    screen and (min-width: 768px) and (hover: hover),
+
+    /* IE10 and IE11 (they don't support (hover: hover) */
+    screen and (min-width: 768px) and (-ms-high-contrast: none),
+    screen and (min-width: 768px) and (-ms-high-contrast: active)
+{
+    body {
+        margin: 0;
+        padding: 0;
+    }
+
+    h1 {
+        margin: 0;
+        padding: 2rem 4rem 1rem;
+        height: 2rem;
+    }
+
+    nav ul {
+        margin: 0;
+        padding: 0 4rem;
+    }
+
+    li {
+        list-style: none;
+        margin-bottom: 1em;
+    }
+
+    p {
+        margin: 0 4rem;
+    }
+}
+  </style>
+"""
+            )
+
+            index_file.write(
+                f"""\
+</head>
+<body>
+  <h1>{self.settings.title}</h1>
+"""
+            )
+
+            if len(albums) == 0:
+                index_file.write(
+                    """\
+  <p>There are no publicly visible albums.</p>
+"""
+                )
+            else:
+                index_file.write(
+                    """\
+  <nav>
+    <ul>
+"""
+                )
+
+                for album in albums:
+                    album_html = album.get_html()
+                    index_file.write(f"      <li>{album_html}</li>\n")
+
+                index_file.write(
+                    """\
+    </ul>
+  </nav>
+"""
+                )
+
+            index_file.write(
+                """\
+</body>
+</html>
+"""
+            )
 
 
 def main() -> None:
