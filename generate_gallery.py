@@ -17,7 +17,6 @@ from typing import Any, List, Optional, Union
 import av  # type: ignore
 import pyexiv2  # type: ignore
 import tomli
-import yaml  # type: ignore
 
 from PIL import Image, UnidentifiedImageError  # type: ignore
 
@@ -179,162 +178,8 @@ def orient_image(image: Image, orientation: Optional[int]) -> Image:
     return image
 
 
-# def process_video_file(
-#     album_settings: AlbumSettings, file_path: Path
-# ) -> Optional[VideoFile]:
-#     """Obtain video metadata, resize the video, and create a thumbnail."""
-#     filename = os.path.basename(file_path)
-#     logger.debug("Processing <%s>", filename)
-
-#     try:
-#         metadata = get_video_metadata(album_settings, file_path)
-#     except RuntimeError as error:
-#         logger.warning("    Error: %s", error)
-#         return None
-
-#     logger.debug("    Title: %s", metadata.title)
-#     logger.debug("    Timestamp: %s", metadata.timestamp)
-#     logger.debug("    Location: %s", metadata.location)
-#     logger.debug(
-#         "    Orientation: %s (%ssideways)",
-#         metadata.orientation,
-#         "" if is_sideways_orientation(metadata.orientation) else "not ",
-#     )
-
-#     final_path = Path(os.path.join(album_settings.album_dir, filename))
-
-#     shutil.copy2(file_path, final_path)
-
-#     # Create video thumbnail
-#     container = av.open(str(file_path))
-#     frames = container.decode(video=0)  # Get the first video stream
-#     first_frame = next(frames)
-#     image = first_frame.to_image()
-
-#     image = orient_image(image, metadata.orientation)
-#     image.thumbnail((album_settings.thumbnail_width, album_settings.thumbnail_height))
-
-#     # centre the thumbnail in its container
-#     thumbnail_position = (
-#         math.floor((album_settings.thumbnail_width - image.width) / 2),
-#         math.floor((album_settings.thumbnail_height - image.height) / 2),
-#     )
-
-#     thumbnail_image = Image.new(
-#         "RGB",
-#         (album_settings.thumbnail_width, album_settings.thumbnail_height),
-#         (0, 0, 0),
-#     )
-#     thumbnail_image.paste(image, thumbnail_position)
-
-#     # save thumbnail to album/thumbnails/
-#     thumbnail_path = Path(
-#         os.path.join(album_settings.thumbnails_dir, f"{filename}.jpg")
-#     )
-#     thumbnail_image.save(thumbnail_path)
-
-#     return VideoFile(
-#         url=urllib.parse.quote(f"{filename}"),
-#         thumbnail_url=urllib.parse.quote(f"thumbnails/{filename}.jpg"),
-#         filename=filename,
-#         metadata=metadata,
-#     )
-
-
-# def generate_album(image_dir_name: str) -> None:
-#     """Generate an HTML album for files in a directory."""
-#     logger.debug("image_dir_name = %s", image_dir_name)
-
-#     #  1) read album-settings.yaml file, if present
-#     #      - album_title = {cwd basename}
-#     #      - public_album = False - whether or not album is shown on gallery page
-#     #      - max_width = None  - Files will be resized to fit the maximum
-#     #      - max_height = None - width and height, if specified
-#     #      - thumbnail_width = 100
-#     #      - thumbnail_height = 100
-#     #      - strip_gps_data = True - Whether or not to remove GPS data from images
-#     #      - default_time_offset = "+00:00" - Default time offset, if not in metadata
-#     #      - show_timestamps = True - Whether or not to show image/video timestamps
-#     #      - sort_key = "timestamp" - Can be "filename" or "timestamp"
-
-#     album_settings = AlbumSettings()
-
-#     album_settings_file_path = os.path.join(image_dir_name, "album-settings.yaml")
-
-#     try:
-#         with open(
-#             album_settings_file_path, "r", encoding="utf-8"
-#         ) as album_settings_file:
-#             settings = yaml.safe_load(album_settings_file)
-
-#         if "album_title" in settings:
-#             album_settings.album_title = settings["album_title"]
-#         else:
-#             album_settings.album_title = os.path.basename(image_dir_name)
-
-#         for attr_name in [
-#             "max_width",
-#             "max_height",
-#             "thumbnail_width",
-#             "thumbnail_height",
-#             "strip_gps_data",
-#             "default_time_offset",
-#             "show_timestamps",
-#             "sort_key",
-#         ]:
-#             if attr_name in settings:
-#                 setattr(album_settings, attr_name, settings[attr_name])
-#     except FileNotFoundError:
-#         album_settings.album_title = os.path.basename(image_dir_name)
-
-#     logger.debug("%s", album_settings)
-
-#     # 2) create album/ and album/thumbnails/
-#     album_dir_name = os.path.join(image_dir_name, "album")
-#     thumbnails_dir_name = os.path.join(album_dir_name, "thumbnails")
-
-#     album_dir = Path(album_dir_name)
-#     thumbnails_dir = Path(thumbnails_dir_name)
-
-#     album_dir.mkdir(mode=0o755, exist_ok=True)
-#     thumbnails_dir.mkdir(mode=0o755, exist_ok=True)
-
-#     album_settings.album_dir = album_dir
-#     album_settings.thumbnails_dir = thumbnails_dir
-
-#     # 3) find and process all file
-#     file_paths = list(Path(image_dir_name).glob("*"))
-
-#     files: List[Union[ImageFile, VideoFile]] = []
-
-#     for file_path in file_paths:
-#         # Ignore files that don't appear to be images
-#         if not is_image_file(file_path) and not is_video_file(file_path):
-#             continue
-
-#         file: Optional[Union[ImageFile, VideoFile]]
-
-#         if is_image_file(file_path):
-#             file = process_image_file(album_settings, file_path)
-#         elif is_video_file(file_path):
-#             file = process_video_file(album_settings, file_path)
-#         else:
-#             continue
-
-#         if file:
-#             files.append(file)
-
-#     # 4) sort photos
-#     if album_settings.sort_key == "timestamp":
-#         files.sort(
-#             key=lambda file: file.metadata.timestamp or datetime.now(timezone.utc)
-#         )
-#     elif album_settings.sort_key == "filename":
-#         files.sort(key=lambda file: file.filename)
-
-#     # 5) create album index.html
-#     album_file_path = Path(os.path.join(album_dir, "index.html"))
-#     write_album_file(album_settings, files, album_file_path)
+class SettingsFileError(RuntimeError):
+    """Raised when unable to read or process a gallery or album settings file."""
 
 
 # pylint: disable=too-many-instance-attributes
@@ -385,9 +230,10 @@ class ImageFile:
     path: Path
     settings: PageSettings
 
+    filename: str
+    thumbnail_filename: str
     url: str
     thumbnail_url: str
-    filename: str
 
     title: Optional[str] = None
     timestamp: Optional[datetime] = None
@@ -398,12 +244,15 @@ class ImageFile:
     height: int
 
     def __init__(self, path: Path, settings: PageSettings):
+        logger.debug("Reading metadata for <%s>", path)
+
         self.path = path
         self.settings = settings
 
-        self.url = path.name
-        self.thumbnail_url = f"{THUMBNAILS_DIR_NAME}/{self.url}"
-        self.filename = path.stem
+        self.filename = path.name
+        self.thumbnail_filename = f"{path.stem}.jpg"
+        self.url = self.filename
+        self.thumbnail_url = f"{THUMBNAILS_DIR_NAME}/{self.thumbnail_filename}"
 
         metadata = read_metadata(path)
 
@@ -476,6 +325,8 @@ class ImageFile:
 
     def process(self, output_dir_path: Path, thumbnails_dir_path: Path) -> None:
         """Resize image if necessary, generate thumbnail, and copy to output dir."""
+        logger.debug("Processing <%s>", self.path)
+
         image = Image.open(self.path)
 
         # Resize photos to maximum dimensions
@@ -515,12 +366,11 @@ class ImageFile:
         thumbnail_image.paste(image, thumbnail_position)
 
         # Save thumbnail
-        thumbnail_path = thumbnails_dir_path.joinpath(self.url)
+        thumbnail_path = thumbnails_dir_path.joinpath(self.thumbnail_filename)
         thumbnail_image.save(thumbnail_path)
 
     def get_thumbnail_html(self, idx: int) -> str:
         """Generate HTML snippet for the image's thumbnail."""
-
         if self.title is not None:
             alt_tag = f'alt="{html.escape(self.title)}" '
         else:
@@ -535,9 +385,8 @@ class ImageFile:
 
         return f'<a href="#file-{idx}">{img_tag}</a>'
 
-    def get_html(self, idx: int) -> str:
+    def get_html(self) -> str:
         """Generate HTML snippet for the image."""
-
         parts = []
 
         if self.title is not None:
@@ -572,6 +421,8 @@ class VideoFile:
 
     path: Path
 
+    filename: str
+    thumbnail_filename: str
     url: str
     thumbnail_url: str
 
@@ -583,58 +434,162 @@ class VideoFile:
     orientation: Optional[int]
 
     def __init__(self, path: Path, settings: PageSettings):
+        logger.debug("Reading metadata for <%s>", path)
+
         self.path = path
+        self.settings = settings
 
-    def process(self, output_path: Path, thumbnails_path: Path) -> None:
+        self.filename = path.name
+        self.thumbnail_filename = f"{path.stem}.jpg"
+        self.url = self.filename
+        self.thumbnail_url = f"{THUMBNAILS_DIR_NAME}/{self.thumbnail_filename}"
+
+        # TODO: Figure out a way to extract metadata directly from the video file
+        # TODO: Look for .XMP
+        metadata = read_metadata(path.with_name(f"{path.name}.xmp"))
+
+        self.title = get_first_existing_attr(
+            metadata,
+            [
+                "Xmp.dc.title",
+                "Xmp.acdsee.caption",
+                "Iptc.Application2.ObjectName",
+            ],
+        )
+
+        if settings.show_timestamps:
+            timestamp_str = get_first_existing_attr(
+                metadata,
+                [
+                    "Exif.Photo.DateTimeOriginal",
+                    "Exif.Image.DateTime",
+                    "Exif.Photo.DateTimeDigitized",
+                ],
+            )
+
+            if timestamp_str is not None:
+                # The date may be in the format YYYY:MM:DD
+                # If it is, change it to YYYY-MM-DD
+                if RE_DATE_HAS_COLONS.search(timestamp_str):
+                    timestamp_str = timestamp_str.replace(":", "-", 2)
+
+                if not RE_ENDS_WITH_OFFSET.search(timestamp_str):
+                    timestamp_str = f"{timestamp_str}{settings.default_time_offset}"
+
+                self.timestamp = datetime.fromisoformat(timestamp_str)
+
+        if not settings.strip_gps_data:
+            self.location = get_first_existing_attr(
+                metadata,
+                [
+                    "Exif.Image.ImageDescription",
+                    "Iptc.Application2.Caption",
+                    "Xmp.acdsee.notes",
+                    "Xmp.dc.description",
+                    "Xmp.exif.UserComment",
+                    "Xmp.tiff.ImageDescription",
+                ],
+            )
+
+            if (
+                self.location is None
+                and "Exif.GPSInfo.GPSLatitudeRef" in metadata
+                and "Exif.GPSInfo.GPSLatitude" in metadata
+                and "Exif.GPSInfo.GPSLongitudeRef" in metadata
+                and "Exif.GPSInfo.GPSLongitude" in metadata
+            ):
+                self.location = (
+                    f"{get_gps_dms_form(metadata['Exif.GPSInfo.GPSLatitude'])} "
+                    f"{metadata['Exif.GPSInfo.GPSLatitudeRef']} "
+                    f"{get_gps_dms_form(metadata['Exif.GPSInfo.GPSLongitude'])} "
+                    f"{metadata['Exif.GPSInfo.GPSLongitudeRef']}"
+                )
+
+        orientation = get_first_existing_attr(
+            metadata,
+            [
+                "Exif.Image.Orientation",
+            ],
+        )
+
+        if orientation is not None:
+            self.orientation = int(orientation)
+
+    def process(self, output_path: Path, thumbnails_dir_path: Path) -> None:
         """Re-encode video if necessary, generate thumbnail, and copy to output dir."""
+        logger.debug("Processing <%s>", self.path)
 
-        self.url = (
-            self.path.name
-        )  # TODO: handle filename change for MP$-converted files
-        self.thumbnail_url = f"{THUMBNAILS_DIR_NAME}/{self.url}"
+        # TODO: handle filename change for MP$-converted files
+
+        output_path = output_path.joinpath(self.url)
+
+        shutil.copy2(self.path, output_path)
+
+        # Create video thumbnail
+        container = av.open(str(self.path))
+        frames = container.decode(video=0)  # Get the first video stream
+        first_frame = next(frames)
+        image = first_frame.to_image()
+
+        image.thumbnail((self.settings.thumbnail_width, self.settings.thumbnail_height))
+
+        # Centre the thumbnail in its container
+        thumbnail_position = (
+            math.floor((self.settings.thumbnail_width - image.width) / 2),
+            math.floor((self.settings.thumbnail_height - image.height) / 2),
+        )
+
+        thumbnail_image = Image.new(
+            "RGB",
+            (self.settings.thumbnail_width, self.settings.thumbnail_height),
+            (0, 0, 0),
+        )
+        thumbnail_image.paste(image, thumbnail_position)
+
+        # Save thumbnail
+        thumbnail_path = Path(thumbnails_dir_path.joinpath(self.thumbnail_filename))
+        thumbnail_image.save(thumbnail_path)
 
     def get_thumbnail_html(self, idx: int) -> str:
         """Generate HTML snippet for the video's thumbnail."""
+        if self.title is not None:
+            alt_tag = f'alt="{html.escape(self.title)}" '
+        else:
+            alt_tag = f'alt="{html.escape(self.filename)}" '
 
-        #     if metadata.title is not None:
-        #         alt_tag = f'alt="{html.escape(metadata.title)}" '
-        #     else:
-        #         alt_tag = f'alt="{html.escape(file.filename)}" '
+        img_tag = (
+            f'<img src="{self.thumbnail_url}" '
+            f"{alt_tag}"
+            f'width="{self.settings.thumbnail_width}" '
+            f'height="{self.settings.thumbnail_height}">'
+        )
 
-        #     img_tag = (
-        #         f'<img src="{file.thumbnail_url}" '
-        #         f"{alt_tag}"
-        #         f'width="{album_settings.thumbnail_width}" '
-        #         f'height="{album_settings.thumbnail_height}">'
-        #     )
+        return f'<a href="#file-{idx}" class="video-thumbnail">{img_tag}</a>'
 
-        #     return f'<a href="#file-{idx}" class="video-thumbnail">{img_tag}</a>'
-        return "TODO"
-
-    def get_html(self, idx: int) -> str:
+    def get_html(self) -> str:
         """Generate HTML snippet for the video."""
+        parts = []
 
-        # content_parts.append(f'<video controls><source src="{file.url}"></video>')
+        parts.append(f'<video controls><source src="{self.url}"></video>')
 
-        # if metadata.title is not None:
-        #     content_parts.append(html.escape(metadata.title))
+        if self.title is not None:
+            parts.append(self.title)
 
-        # if metadata.timestamp is not None:
-        #     content_parts.append(
-        #         f'<time datetime="{metadata.timestamp}">'
-        #         f'{metadata.timestamp.strftime("%-d %B %Y")}'
-        #         f"</time>"
-        #     )
+        if self.timestamp is not None:
+            parts.append(
+                f'<time datetime="{self.timestamp}">'
+                f'{self.timestamp.strftime("%-d %B %Y")}'
+                f"</time>"
+            )
 
-        # if metadata.location is not None:
-        #     content_parts.append(
-        #         '<a href="https://duckduckgo.com/?iaxm=maps&q='
-        #         f"{urllib.parse.quote(metadata.location)}"
-        #         f'">🗺️ {html.escape(metadata.location)}</a>'
-        #     )
+        if self.location is not None:
+            parts.append(
+                '<a href="https://duckduckgo.com/?iaxm=maps&q='
+                f"{urllib.parse.quote(self.location)}"
+                f'">🗺️ {html.escape(self.location)}</a>'
+            )
 
-        # return "<br>".join(content_parts)
-        return "TODO"
+        return "<br>".join(parts)
 
 
 class Album:
@@ -647,8 +602,6 @@ class Album:
 
     # Values are inherited from the gallery's page settings if not specified
     settings: PageSettings
-
-    # TODO: If file has no datetime, DO NOT USE FILE CREATION TIME - don't use any time at all
 
     def __init__(self, path: Path, output_base_path: Path):
         self.path = path
@@ -668,13 +621,17 @@ class Album:
         settings_path = self.path.joinpath(ALBUM_SETTINGS_FILENAME)
 
         if not os.path.exists(settings_path):
-            raise RuntimeError(f"Unable to find settings file at <{settings_path}>")
+            raise SettingsFileError(
+                f"Unable to find settings file at <{settings_path}>"
+            )
 
         with open(settings_path, "rb") as settings_file:
             try:
                 settings = tomli.load(settings_file)
             except tomli.TOMLDecodeError as err:
-                raise RuntimeError(f"Unable to read album settings: {err}") from err
+                raise SettingsFileError(
+                    f"Unable to read album settings: {err}"
+                ) from err
 
         for attr in dir(self.settings):
             if attr.startswith("__") or attr in ["path", "output_path"]:
@@ -717,6 +674,11 @@ class Album:
                 video_file = VideoFile(file_path, self.settings)
                 video_file.process(self.output_path, self.thumbnails_path)
                 files.append(video_file)
+
+        if self.settings.sort_key == "timestamp":
+            files.sort(key=lambda file: file.timestamp or datetime.now(timezone.utc))
+        elif self.settings.sort_key == "filename":
+            files.sort(key=lambda file: file.filename)
 
         self.write_album_index(files)
 
@@ -920,8 +882,10 @@ html {
             # TODO: Put placeholder here if there are no files
 
             for file, idx in zip(files, range(1, len(files) + 1)):
-                file_html = file.get_html(idx)
-                index_file.write(f'      <p id="file-{idx}" class="file">{file_html}</p>\n')
+                file_html = file.get_html()
+                index_file.write(
+                    f'      <p id="file-{idx}" class="file">{file_html}</p>\n'
+                )
 
             index_file.write(
                 """\
@@ -996,7 +960,7 @@ class Gallery:
 
                     if album.settings.is_public:
                         albums.append(album)
-                except RuntimeError as err:
+                except SettingsFileError as err:
                     logger.error("Unable to generate album: %s", err)
 
         # TODO: Sort the albums
