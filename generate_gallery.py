@@ -249,8 +249,10 @@ class ImageFile:
 
         self.filename = path.name
         self.thumbnail_filename = f"{path.stem}.jpg"
-        self.url = self.filename
-        self.thumbnail_url = f"{THUMBNAILS_DIR_NAME}/{self.thumbnail_filename}"
+        self.url = urllib.parse.quote(self.filename)
+        self.thumbnail_url = urllib.parse.quote(
+            f"{THUMBNAILS_DIR_NAME}/{self.thumbnail_filename}"
+        )
 
         metadata = read_metadata(path)
 
@@ -399,7 +401,7 @@ class ImageFile:
         parts.append(f'<a href="{self.url}"><img src="{self.url}" ' f"{alt_tag}></a>")
 
         if self.title is not None:
-            parts.append(self.title)
+            parts.append(self.title.replace("\n", "<br>"))
 
         if self.timestamp is not None:
             parts.append(
@@ -409,9 +411,10 @@ class ImageFile:
             )
 
         if self.location is not None:
+            location_text = urllib.parse.quote(self.location).replace("\n", "<br>")
             parts.append(
                 '<a href="https://duckduckgo.com/?iaxm=maps&q='
-                f"{urllib.parse.quote(self.location)}"
+                f"{location_text}"
                 f'">🗺️ {html.escape(self.location)}</a>'
             )
 
@@ -428,12 +431,12 @@ class VideoFile:
     url: str
     thumbnail_url: str
 
-    title: Optional[str]
-    timestamp: Optional[datetime]
-    location: Optional[str]  # Description, caption, or GPS coordinates
-    width: Optional[int]
-    height: Optional[int]
-    orientation: Optional[int]
+    title: Optional[str] = None
+    timestamp: Optional[datetime] = None
+    location: Optional[str] = None  # Description, caption, or GPS coordinates
+    width: Optional[int] = None
+    height: Optional[int] = None
+    orientation: Optional[int] = None
 
     def __init__(self, path: Path, settings: PageSettings):
         logger.debug("Reading metadata for <%s>", path)
@@ -443,8 +446,10 @@ class VideoFile:
 
         self.filename = path.name
         self.thumbnail_filename = f"{path.stem}.jpg"
-        self.url = self.filename
-        self.thumbnail_url = f"{THUMBNAILS_DIR_NAME}/{self.thumbnail_filename}"
+        self.url = urllib.parse.quote(self.filename)
+        self.thumbnail_url = urllib.parse.quote(
+            f"{THUMBNAILS_DIR_NAME}/{self.thumbnail_filename}"
+        )
 
         # TODO: Figure out a way to extract metadata directly from the video file
         # TODO: Look for .XMP
@@ -521,12 +526,14 @@ class VideoFile:
         """Re-encode video if necessary, generate thumbnail, and copy to output dir."""
         logger.debug("Processing <%s>", self.path)
 
-        # TODO: handle filename change for MP$-converted files
+        # TODO: handle filename change for MP4-converted files
 
         output_path = output_path.joinpath(self.url)
 
         if not output_path.exists():
             shutil.copy2(self.path, output_path)
+
+        # TODO: Strip GPS data from video, if indicated
 
         # Create video thumbnail
         container = av.open(str(self.path))
@@ -578,7 +585,7 @@ class VideoFile:
         parts.append(f'<video controls><source src="{self.url}"></video>')
 
         if self.title is not None:
-            parts.append(self.title)
+            parts.append(self.title.replace("\n", "<br>"))
 
         if self.timestamp is not None:
             parts.append(
@@ -588,9 +595,10 @@ class VideoFile:
             )
 
         if self.location is not None:
+            location_text = urllib.parse.quote(self.location).replace("\n", "<br>")
             parts.append(
                 '<a href="https://duckduckgo.com/?iaxm=maps&q='
-                f"{urllib.parse.quote(self.location)}"
+                f"{location_text}"
                 f'">🗺️ {html.escape(self.location)}</a>'
             )
 
@@ -915,7 +923,11 @@ html {
 
     def get_html(self):
         """Return the HTML tag for navigating to this album."""
-        return f'<a href="{self.settings.output_directory_name}/index.html">{self.settings.title}</a>'
+        return (
+            f'<a href="{self.settings.output_directory_name}/index.html">'
+            f"{self.settings.title}"
+            "</a>"
+        )
 
 
 class Gallery:
@@ -1146,6 +1158,9 @@ def main() -> None:
     dir_names = []
 
     for arg in sys.argv[1:]:
+        # TODO: Add option -v or --verbose to print processing information (e.g. strip_gps)
+        # TODO: Add option -r or --reprocess to force program to reprocess files that exist
+        # TODO: Add option -h or --hidden-index to force program to generate index for hidden albums
         if arg in ["-d", "--debug"]:
             logger.setLevel(logging.DEBUG)
         elif arg in ["-h", "--help"]:
