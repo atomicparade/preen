@@ -200,7 +200,7 @@ class PageSettings:
     foreground_color: str = "#eeeeee"
     background_color: str = "#333333"
     link_color: str = "#44aadd"
-    video_crf: Optional[int] = None
+    favicon_href: Optional[str] = None
 
     def clone(self):
         """Create a copy of the settings, except for the title and output directory name."""
@@ -532,50 +532,17 @@ class VideoFile:
         output_path = output_path.joinpath(self.url)
 
         if not output_path.exists():
-            if self.settings.video_crf:
-                output_path = output_path.with_name(f"{output_path.stem}.mp4")
-                logger.debug("Transcoding video to <%s>", output_path)
-
-                with av.open(str(self.path), "r") as input_container:
-                    with av.open(str(output_path), "w") as output_container:
-                        input_video_stream = input_container.streams.video[0]
-                        input_audio_stream = input_container.streams.audio[0]
-
-                        output_video_stream = output_container.add_stream("libx264")
-                        output_video_stream.options = {
-                            "crf": str(self.settings.video_crf)
-                        }
-
-                        for packet in input_container.demux(input_video_stream):
-                            if packet.dts is not None:
-                                packet.stream = output_video_stream
-                                output_container.mux(packet)
-
-                        output_audio_stream = output_container.add_stream(
-                            template=input_audio_stream
-                        )
-
-                        for packet in input_container.demux(input_audio_stream):
-                            if packet.dts is not None:
-                                packet.stream = output_audio_stream
-                                output_container.mux(packet)
-
-                self.url = f"{urllib.parse.quote(self.path.stem)}.mp4"
-            else:
-                logger.debug("Copying video to <%s>", output_path)
-                shutil.copy2(self.path, output_path)
+            shutil.copy2(self.path, output_path)
 
         # TODO: Strip GPS data from video, if indicated
 
         # Create video thumbnail
-        with av.open(str(self.path)) as container:
-            frames = container.decode(video=0)  # Get the first video stream
-            first_frame = next(frames)
-            image = first_frame.to_image()
+        container = av.open(str(self.path))
+        frames = container.decode(video=0)  # Get the first video stream
+        first_frame = next(frames)
+        image = first_frame.to_image()
 
-            image.thumbnail(
-                (self.settings.thumbnail_width, self.settings.thumbnail_height)
-            )
+        image.thumbnail((self.settings.thumbnail_width, self.settings.thumbnail_height))
 
         # Centre the thumbnail in its container
         thumbnail_position = (
@@ -697,16 +664,6 @@ class Album:
 
         self.thumbnails_path = self.output_path.joinpath(THUMBNAILS_DIR_NAME)
 
-        if (self.settings.video_crf is not None) and (
-            not isinstance(self.settings.video_crf, int)
-            or self.settings.video_crf < 0
-            or self.settings.video_crf > 51
-        ):
-            logger.warning(
-                "Invalid video_crf value <%s> (must be between 0 and 51)",
-                self.settings.video_crf,
-            )
-
         self.settings.debug_print()
 
         logger.debug("Output path: %s", self.output_path)
@@ -743,6 +700,15 @@ class Album:
         """Generate an HTML file for an album."""
         index_file_path = self.output_path.joinpath("index.html")
 
+        if self.settings.favicon_href is None:
+            favicon_html = ""
+        else:
+            favicon_html = (
+                "\n"
+                '  <link rel="icon" type="image/x-icon" '
+                f'href="{self.settings.favicon_href}">'
+            )
+
         with open(index_file_path, "w", encoding="utf-8") as index_file:
             index_file.write(
                 f"""\
@@ -753,7 +719,7 @@ class Album:
   <title>{self.settings.title}</title>
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta property="og:title" content="{self.settings.title}">
-  <meta name="twitter:title" content="{self.settings.title}">
+  <meta name="twitter:title" content="{self.settings.title}">{favicon_html}
   <style>
 body {{
     color: {self.settings.foreground_color};
@@ -1017,16 +983,6 @@ class Gallery:
 
         self.output_path = self.path.joinpath(self.settings.output_directory_name)
 
-        if (self.settings.video_crf is not None) and (
-            not isinstance(self.settings.video_crf, int)
-            or self.settings.video_crf < 0
-            or self.settings.video_crf > 51
-        ):
-            logger.warning(
-                "Invalid video_crf value <%s> (must be between 0 and 51)",
-                self.settings.video_crf,
-            )
-
         self.settings.debug_print()
 
         logger.debug("Output path: %s", self.output_path)
@@ -1058,6 +1014,15 @@ class Gallery:
         """Generate an HTML file for an album."""
         index_file_path = self.output_path.joinpath("index.html")
 
+        if self.settings.favicon_href is None:
+            favicon_html = ""
+        else:
+            favicon_html = (
+                "\n"
+                '  <link rel="icon" type="image/x-icon" '
+                f'href="{self.settings.favicon_href}">'
+            )
+
         with open(index_file_path, "w", encoding="utf-8") as index_file:
             index_file.write(
                 f"""\
@@ -1068,7 +1033,7 @@ class Gallery:
   <title>{self.settings.title}</title>
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta property="og:title" content="{self.settings.title}">
-  <meta name="twitter:title" content="{self.settings.title}">
+  <meta name="twitter:title" content="{self.settings.title}">{favicon_html}
   <style>
 body {{
     color: {self.settings.foreground_color};
