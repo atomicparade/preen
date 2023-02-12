@@ -1,0 +1,53 @@
+title = "Media"
+
+# The name to use for the output directory
+# For galleries, the default value is "gallery"
+# For albums, the default value is the SHA-256 hash of the directory name
+#output_directory_name = "gallery"
+
+# Whether or not the album should be included on the gallery's index page
+# Default value is false
+is_public = false
+
+# Whether or not to strip GPS data from the output files
+# Default value is true
+strip_gps_data = true
+
+# If specified, images that are lager than these maximum dimensions will be
+# resized to fit them
+# Default behaviour is not to resize images
+#max_image_width = 1600
+#max_image_height = 1600
+
+# The size of thumbnails, in pixels
+# Default width is 100
+# Default height is 100
+thumbnail_width = 100
+thumbnail_height = 100
+
+# The UTC offset to use when it is not specified in the EXIF, IPTC, or XMP data
+# Default value is "+00:00"
+default_time_offset = "+00:00"
+
+# Whether or not the timestamp specified in the EXIF, IPTC, or XMP data should
+# be displayed under the media file
+# Default value is true
+show_timestamps = true
+
+# Files can be sorted by "timestamp" or "filename"
+# Default value is "timestamp"
+sort_key = "timestamp"
+
+# The foreground, background, and link colours to use
+# Any valid CSS colour value can be specified
+# Default foreground colour: "#eeeeee"
+# Default background colour: "#333333"
+# Default link colour: "#44aadd"
+foreground_color = "#eeeeee"
+background_color = "#333333"
+link_color = "#44aadd"
+
+# If specified, gallery and album pages will include:
+#     <link rel="icon" type="image/x-icon" href="favicon_href">
+# Default behavior is not to use a favicon
+#favicon_href = "/favicon.ico"
