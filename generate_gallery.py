@@ -1183,8 +1183,8 @@ def main() -> None:
         if arg in ["-d", "--debug"]:
             logger.setLevel(logging.DEBUG)
         elif arg in ["-h", "--help"]:
-            # TODO: Print help information
-            print("TODO: Print help information")
+            print(f"Usage: {sys.argv[0]} [-d|--debug] DIR_NAME...")
+            sys.exit(0)
         else:
             dir_names.append(arg)
 
