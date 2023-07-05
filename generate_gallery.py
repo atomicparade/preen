@@ -266,6 +266,11 @@ class ImageFile:
             ],
         )
 
+        if isinstance(self.title, str):
+            self.title = self.title.strip()
+            if self.title == "":
+                self.title = None
+
         if settings.show_timestamps:
             timestamp_str = get_first_existing_attr(
                 metadata,
@@ -299,6 +304,11 @@ class ImageFile:
                     "Xmp.tiff.ImageDescription",
                 ],
             )
+
+            if isinstance(self.location, str):
+                self.location = self.location.strip()
+                if self.location == "":
+                    self.location = None
 
             if (
                 self.location is None
