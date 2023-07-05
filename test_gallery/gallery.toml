@@ -1,0 +1,16 @@
+title = "Preen - Gallery"
+output_directory_name = "../build/test"
+is_public = true
+strip_gps_data = false
+max_image_width = 800
+max_image_height = 800
+thumbnail_width = 100
+thumbnail_height = 100
+default_time_offset = "+00:00"
+show_timestamps = true
+sort_key = "timestamp"
+foreground_color = "#eeeeee"
+background_color = "#333333"
+link_color = "#44aadd"
+video_crf = 32
+favicon_href = "/favicon.ico"
