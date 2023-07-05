@@ -6,5 +6,8 @@ lint:
 clean_test:
 	rm -rf build/test
 
+debug: clean_test
+	python generate_gallery.py -d test_gallery
+
 test: clean_test
 	python generate_gallery.py test_gallery
