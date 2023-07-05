@@ -187,7 +187,7 @@ class PageSettings:
     """Stores settings for gallery and album generation."""
 
     title: Optional[str] = None
-    output_directory_name: Optional[str] = None
+    output_directory: Optional[str] = None
     is_public: bool = False
     strip_gps_data: bool = True
     max_image_width: Optional[int] = None
@@ -210,7 +210,7 @@ class PageSettings:
             if not (
                 attr.startswith("__")
                 or callable(getattr(self, attr))
-                or (attr in ["title", "output_directory_name"])
+                or (attr in ["title", "output_directory"])
             ):
                 setattr(copy, attr, getattr(self, attr))
 
@@ -664,13 +664,19 @@ class Album:
             if attr in settings:
                 setattr(self.settings, attr, settings[attr])
 
-        if self.settings.output_directory_name is None:
+        if (
+            self.settings.output_directory is None
+            or self.settings.output_directory.strip() == ""
+        ):
             name_hash = hashlib.sha256(self.path.name.encode())
-            self.settings.output_directory_name = name_hash.hexdigest()
+            self.settings.output_directory = name_hash.hexdigest()
 
         self.output_path = self.output_base_path.joinpath(
-            self.settings.output_directory_name
-        )
+            self.settings.output_directory
+        ).resolve()
+
+        if os.path.isabs(self.settings.output_directory):
+            self.settings.is_public = False
 
         self.thumbnails_path = self.output_path.joinpath(THUMBNAILS_DIR_NAME)
 
@@ -944,7 +950,7 @@ html {
     def get_html(self):
         """Return the HTML tag for navigating to this album."""
         return (
-            f'<a href="{self.settings.output_directory_name}/index.html">'
+            f'<a href="{self.settings.output_directory}/index.html">'
             f"{self.settings.title}"
             "</a>"
         )
@@ -988,10 +994,10 @@ class Gallery:
             if attr in settings:
                 setattr(self.settings, attr, settings[attr])
 
-        if self.settings.output_directory_name is None:
-            self.settings.output_directory_name = "gallery"
+        if self.settings.output_directory is None:
+            self.settings.output_directory = "gallery"
 
-        self.output_path = self.path.joinpath(self.settings.output_directory_name)
+        self.output_path = self.path.joinpath(self.settings.output_directory).resolve()
 
         self.settings.debug_print()
 

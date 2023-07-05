@@ -1,5 +1,5 @@
 title = "Preen - Gallery"
-output_directory_name = "../build/test"
+output_directory = "../build/test"
 is_public = true
 strip_gps_data = false
 max_image_width = 800

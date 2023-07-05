@@ -1,11 +1,17 @@
 title = "Media"
 
-# The name to use for the output directory
-# For galleries, the default value is "gallery"
-# For albums, the default value is the SHA-256 hash of the directory name
-#output_directory_name = "gallery"
+# The output path; this can be a relative or absolute path
+# For galleries:
+#     - This is relative to the current working directory
+#     - Default value is "gallery"
+# For albums:
+#     - This is relative to the gallery directory
+#     - Default value is the SHA-256 hash of the directory name
+#output_directory = "gallery"
 
 # Whether or not the album should be included on the gallery's index page
+# If the album's output_directory is an absolute path, the album will not
+# be included on the gallery's index page, regardless of this setting
 # Default value is false
 is_public = false
 
