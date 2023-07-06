@@ -85,3 +85,7 @@ sort_key = "timestamp"
 #     <link rel="icon" type="image/x-icon" href="favicon_href">
 # Default behavior is not to use a favicon
 #favicon_href = "/favicon.ico"
+
+# List of filenames (case-sensitive) from which GPS data should be stripped
+# Default value = [] (empty list = don't strip from any files)
+#strip_gps_data_from = ["file1.jpg", "file2.jpg"]

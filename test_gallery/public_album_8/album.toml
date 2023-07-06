@@ -1,0 +1,3 @@
+title = 'preen - Public Album 8 - strip_gps_data_from = ["DSC_0001.JPEG", "DSC_0004.JPEG"]'
+output_directory = "public_album_8"
+strip_gps_data_from = ["DSC_0001.JPEG", "DSC_0004.JPEG"]

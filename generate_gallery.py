@@ -205,6 +205,7 @@ class PageSettings:
     background_color: str = "#333333"
     link_color: str = "#44aadd"
     favicon_href: Optional[str] = None
+    strip_gps_data_from: List[str] = []
 
     def clone(self):
         """Create a copy of the settings, except for the title and output directory name."""
@@ -313,7 +314,10 @@ class ImageFile:
             if self.location == "":
                 self.location = None
 
-        if not settings.strip_gps_data:
+        if (
+            not settings.strip_gps_data
+            and not self.path.name in self.settings.strip_gps_data_from
+        ):
             if (
                 self.location is None
                 and "Exif.GPSInfo.GPSLatitudeRef" in metadata
@@ -362,7 +366,10 @@ class ImageFile:
         if not output_path.exists():
             image.save(output_path, exif=image.getexif())
 
-        if self.settings.strip_gps_data:
+        if (
+            self.settings.strip_gps_data
+            or self.path.name in self.settings.strip_gps_data_from
+        ):
             strip_gps_data(output_path)
 
         # Create thumbnail
