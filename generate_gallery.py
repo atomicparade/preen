@@ -188,6 +188,8 @@ class PageSettings:
 
     title: Optional[str] = None
     output_directory: Optional[str] = None
+    append_hash_to_output_directory: bool = False
+    hash_value: Optional[str] = None
     is_public: bool = False
     strip_gps_data: bool = True
     max_image_width: Optional[int] = None
@@ -664,12 +666,23 @@ class Album:
             if attr in settings:
                 setattr(self.settings, attr, settings[attr])
 
-        if (
-            self.settings.output_directory is None
-            or self.settings.output_directory.strip() == ""
-        ):
-            name_hash = hashlib.sha256(self.path.name.encode())
-            self.settings.output_directory = name_hash.hexdigest()
+        if self.settings.output_directory is not None:
+            self.settings.output_directory = self.settings.output_directory.strip()
+
+            if self.settings.output_directory == "":
+                self.settings.output_directory = None
+
+        if self.settings.hash_value is not None:
+            hash_input = self.settings.hash_value.encode()
+        else:
+            hash_input = self.path.name.encode()
+
+        if self.settings.output_directory is None:
+            hash_output = hashlib.sha256(hash_input)
+            self.settings.output_directory = hash_output.hexdigest()
+        elif self.settings.append_hash_to_output_directory:
+            hash_output = hashlib.sha256(hash_input)
+            self.settings.output_directory += hash_output.hexdigest()
 
         self.output_path = self.output_base_path.joinpath(
             self.settings.output_directory

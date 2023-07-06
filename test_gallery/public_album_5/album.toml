@@ -1,0 +1,4 @@
+title = "Preen - Public Album 5 - output_directory set, append_hash_to_output_directory is true, hash_value set"
+output_directory = "public_album_5_"
+append_hash_to_output_directory = true
+hash_value = "Some Secret Value A12345678"
