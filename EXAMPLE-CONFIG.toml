@@ -1,0 +1,91 @@
+# Settings that affect both galleries and albums
+
+# The title of the gallery or album page
+title = "Media"
+
+# The output path; this can be a relative or absolute path
+# For galleries:
+#     - This is relative to the current working directory
+#     - Default value is "gallery"
+# For albums:
+#     - This is relative to the gallery directory
+#     - Default value is the SHA-256 hash of the directory name
+#output_directory = "gallery"
+
+# The foreground, background, and link colours to use
+# Any valid CSS colour value can be specified
+# Default foreground colour: "#eeeeee"
+# Default background colour: "#333333"
+# Default link colour: "#44aadd"
+foreground_color = "#eeeeee"
+background_color = "#333333"
+link_color = "#44aadd"
+
+
+
+# Settings that only affect galleries
+
+# If specified, an index page will be generated for private albums
+#private_gallery_index_filename = "private-index.html"
+
+# If private_gallery_index_filename is specified, this will be the title of the
+# private gallery
+# Default value is "Media - Private"
+private_gallery_title = "Media - Private"
+
+
+
+# Settings that only affect albums
+
+# If true AND the output_directory is specified, the hash of the directory name
+# will be appended to the output_directory name
+# Default value is false
+append_hash_to_output_directory = false
+
+# If specified, this value is used to generate the hash, instead of the
+# directory name
+#hash_value = "gallery"
+
+# Whether or not the album should be included on the gallery's index page
+# If the album's output_directory is an absolute path, the album will not
+# be included on the gallery's index page, regardless of this setting
+# Default value is false
+is_public = false
+
+# Whether or not to strip GPS data from the output files
+# Default value is true
+strip_gps_data = true
+
+# If specified, images that are larger than these maximum dimensions will be
+# resized to fit them
+# Default behaviour is not to resize images
+#max_image_width = 1600
+#max_image_height = 1600
+
+# The size of thumbnails, in pixels
+# Default width is 100
+# Default height is 100
+thumbnail_width = 100
+thumbnail_height = 100
+
+# The UTC offset to use when it is not specified in the EXIF, IPTC, or XMP data
+# Default value is "+00:00"
+default_time_offset = "+00:00"
+
+# Whether or not the timestamp specified in the EXIF, IPTC, or XMP data should
+# be displayed under the media file
+# Default value is true
+show_timestamps = true
+
+# Files can be sorted by "timestamp" or "filename"
+# Default value is "timestamp"
+sort_key = "timestamp"
+
+# If specified, gallery and album pages will include:
+#     <link rel="icon" type="image/x-icon" href="favicon_href">
+# Default behavior is not to use a favicon
+#favicon_href = "/favicon.ico"
+
+# List of filenames (case-sensitive) from which GPS data should be stripped
+# Default value = [] (empty list = don't strip from any files)
+#strip_gps_data_from = ["file1.jpg", "file2.jpg"]

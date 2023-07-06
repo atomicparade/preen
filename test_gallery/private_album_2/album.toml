@@ -1,0 +1,4 @@
+title = "preen - Private Album 2 - strip_gps_data = true"
+output_directory = "private_album_2"
+is_public = false
+strip_gps_data = true

@@ -1,23 +1,74 @@
-# photo-album
+# preen
+
+Media gallery generator. Supports desktop and mobile layouts. No JavaScript.
 
 [![Unlicense](https://img.shields.io/badge/license-Unlicense-blue)](https://choosealicense.com/licenses/unlicense/) [![CC0](https://img.shields.io/badge/license-CC0-blue)](https://creativecommons.org/publicdomain/zero/1.0/)
 
-Generate a minimal photo album.
-
 ## How to use
 
-1. Copy `config-EXAMPLE` to `config` in the directory where you want to generate the album.
-2. Edit the configuration as desired.
-3. `pip install -r requirements.txt` (optionally, create a virtual environment)
-4. `python generate-album.py`
+1. `pip install -r requirements.txt` (optionally, create a virtual environment)
+2. Copy `EXAMPLE-CONFIG.toml` to `gallery.toml` in each gallery directory.
+3. Copy `EXAMPLE-CONFIG.toml` to `album.toml` in each album directory.
+4. Edit the configuration as desired.
+5. `python generate-album.py GALLERY_DIRECTORY [GALLERY_DIRECTORY]...`
 
-### Captioning photos
+* Any gallery directories missing `gallery.toml` **will not** be processed.
+* Any album directories missing `album.toml` **will not** be processed.
+* All settings are **optional**.
+* Settings specified in `gallery.toml` will be used as default values if
+    unspecified in `album.toml`.
+* Captions are pulled from the first specified value in:
+    * `Xmp.dc.title`
+    * `Xmp.acdsee.caption`
+    * `Iptc.Application2.ObjectName`
+* Locations are pulled from the first specified value in:
+    * `Exif.Image.ImageDescription`
+    * `Iptc.Application2.Caption`
+    * `Xmp.acdsee.notes`
+    * `Xmp.dc.description`
+    * `Xmp.exif.UserComment`
+    * `Xmp.tiff.ImageDescription`
+* If a location is not specified, GPS coordinates are present, and
+    `strip_gps_data` is `False`, a DuckDuckGo Maps link will be provided to the
+    GPS coordinates.
 
-Files are ordered by filenames and captions are extracted from filenames as follows:
+### Example input
 
-1. Files are sorted by natural order (1.png < 2.png < 10.png < a.png).
-2. If an underscore is present in the filename, only the portion after the first underscore, without the extension, is used as the caption. Otherwise, the entire filename without the extension is used as the caption.
+```
+/path/to/media/
+    album1/
+        album.toml
+        image.jpg
+        video.mov
+    album2/
+        album.toml
+        image.png
+        video.mp4
+    gallery.toml
+```
 
-## Example
+### Example output
 
-![Example photo album](docs/example.png)
+```
+/path/to/media/
+    gallery/
+        album1/
+            thumbnails/
+                image.jpg
+                video.jpg
+            image.jpg
+            index.html
+            video.mov
+        album2/
+            thumbnails/
+                image.jpg
+                video.jpg
+            image.png
+            index.html
+            video.mp4
+        index.html
+```
+
+## Screenshot
+
+![Example album](docs/example.png)
