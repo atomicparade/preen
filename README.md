@@ -10,7 +10,7 @@ Media gallery generator. Supports desktop and mobile layouts. No JavaScript.
 2. Copy `EXAMPLE-CONFIG.toml` to `gallery.toml` in each gallery directory.
 3. Copy `EXAMPLE-CONFIG.toml` to `album.toml` in each album directory.
 4. Edit the configuration as desired.
-5. `python generate-album.py GALLERY_DIRECTORY [GALLERY_DIRECTORY]...`
+5. `python generate_gallery.py GALLERY_DIRECTORY [GALLERY_DIRECTORY]...`
 
 * Any gallery directories missing `gallery.toml` **will not** be processed.
 * Any album directories missing `album.toml` **will not** be processed.
