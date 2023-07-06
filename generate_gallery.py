@@ -294,24 +294,24 @@ class ImageFile:
 
                 self.timestamp = datetime.fromisoformat(timestamp_str)
 
+        self.location = get_first_existing_attr(
+            metadata,
+            [
+                "Exif.Image.ImageDescription",
+                "Iptc.Application2.Caption",
+                "Xmp.acdsee.notes",
+                "Xmp.dc.description",
+                "Xmp.exif.UserComment",
+                "Xmp.tiff.ImageDescription",
+            ],
+        )
+
+        if isinstance(self.location, str):
+            self.location = self.location.strip()
+            if self.location == "":
+                self.location = None
+
         if not settings.strip_gps_data:
-            self.location = get_first_existing_attr(
-                metadata,
-                [
-                    "Exif.Image.ImageDescription",
-                    "Iptc.Application2.Caption",
-                    "Xmp.acdsee.notes",
-                    "Xmp.dc.description",
-                    "Xmp.exif.UserComment",
-                    "Xmp.tiff.ImageDescription",
-                ],
-            )
-
-            if isinstance(self.location, str):
-                self.location = self.location.strip()
-                if self.location == "":
-                    self.location = None
-
             if (
                 self.location is None
                 and "Exif.GPSInfo.GPSLatitudeRef" in metadata
