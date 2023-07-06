@@ -31,6 +31,8 @@ Media gallery generator. Supports desktop and mobile layouts. No JavaScript.
 * If a location is not specified, GPS coordinates are present, and
     `strip_gps_data` is `False`, a DuckDuckGo Maps link will be provided to the
     GPS coordinates.
+* For video files: The caption, location, GPS data, and orientation are pulled
+    from the XMP sidecar file `FILENAME.xmp`.
 
 ### Example input
 
@@ -40,10 +42,12 @@ Media gallery generator. Supports desktop and mobile layouts. No JavaScript.
         album.toml
         image.jpg
         video.mov
+        video.mov.xmp
     album2/
         album.toml
         image.png
         video.mp4
+        video.mp4.xmp
     gallery.toml
 ```
 
