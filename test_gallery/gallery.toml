@@ -1,5 +1,8 @@
-title = "Preen - Gallery"
+title = "preen - Test Gallery"
 output_directory = "../build/test"
+private_gallery_index_filename = "private-gallery-secret-a12345678.html"
+private_gallery_title = "preen - Test Private Gallery"
+
 is_public = true
 strip_gps_data = false
 max_image_width = 800

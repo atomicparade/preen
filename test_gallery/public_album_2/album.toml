@@ -1,3 +1,3 @@
-title = "Preen - Public Album 2 - output_directory set, strip_gps_data = true"
+title = "preen - Public Album 2 - output_directory set, strip_gps_data = true"
 output_directory = "public_album_2"
 strip_gps_data = true

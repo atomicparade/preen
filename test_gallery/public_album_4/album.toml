@@ -1,3 +1,3 @@
-title = "Preen - Public Album 4 - output_directory set, append_hash_to_output_directory is true"
+title = "preen - Public Album 4 - output_directory set, append_hash_to_output_directory is true"
 output_directory = "public_album_4_"
 append_hash_to_output_directory = true

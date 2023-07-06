@@ -1,2 +1,2 @@
-title = "Preen - Public Album 3 - output_directory is absolute path"
+title = "preen - Public Album 3 - output_directory is absolute path"
 output_directory = "/tmp/preen_test_public_album_3"

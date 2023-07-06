@@ -190,6 +190,8 @@ class PageSettings:
     output_directory: Optional[str] = None
     append_hash_to_output_directory: bool = False
     hash_value: Optional[str] = None
+    private_gallery_index_filename: Optional[str] = None
+    private_gallery_title: str = "Media - Private"
     is_public: bool = False
     strip_gps_data: bool = True
     max_image_width: Optional[int] = None
@@ -625,6 +627,7 @@ class Album:
     output_base_path: Path
     output_path: Path
     thumbnails_path: Path
+    include_in_gallery: bool
 
     # Values are inherited from the gallery's page settings if not specified
     settings: PageSettings
@@ -689,7 +692,9 @@ class Album:
         ).resolve()
 
         if os.path.isabs(self.settings.output_directory):
-            self.settings.is_public = False
+            self.include_in_gallery = False
+        else:
+            self.include_in_gallery = True
 
         self.thumbnails_path = self.output_path.joinpath(THUMBNAILS_DIR_NAME)
 
@@ -1030,18 +1035,38 @@ class Gallery:
                     album = Album(album_path, self.output_path)
                     album.generate(self.settings)
 
-                    if album.settings.is_public:
-                        albums.append(album)
+                    albums.append(album)
                 except SettingsFileError as err:
                     logger.error("Unable to generate album: %s", err)
 
         albums.sort(key=lambda album: album.settings.title)
 
-        self.write_gallery_index(albums)
+        public_albums = list(
+            filter(
+                lambda album: album.settings.is_public and album.include_in_gallery,
+                albums,
+            )
+        )
+        private_albums = list(
+            filter(
+                lambda album: not album.settings.is_public and album.include_in_gallery,
+                albums,
+            )
+        )
 
-    def write_gallery_index(self, albums: List[Album]):
+        self.write_gallery_index("index.html", self.settings.title, public_albums)
+
+        private_gallery_index_filename = self.settings.private_gallery_index_filename
+        if private_gallery_index_filename is not None:
+            self.write_gallery_index(
+                private_gallery_index_filename,
+                self.settings.private_gallery_title,
+                private_albums,
+            )
+
+    def write_gallery_index(self, filename: str, title: str, albums: List[Album]):
         """Generate an HTML file for an album."""
-        index_file_path = self.output_path.joinpath("index.html")
+        index_file_path = self.output_path.joinpath(filename)
 
         if self.settings.favicon_href is None:
             favicon_html = ""
@@ -1059,10 +1084,10 @@ class Gallery:
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>{self.settings.title}</title>
+  <title>{title}</title>
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
-  <meta property="og:title" content="{self.settings.title}">
-  <meta name="twitter:title" content="{self.settings.title}">{favicon_html}
+  <meta property="og:title" content="{title}">
+  <meta name="twitter:title" content="{title}">{favicon_html}
   <style>
 body {{
     color: {self.settings.foreground_color};
@@ -1151,14 +1176,14 @@ html {
                 f"""\
 </head>
 <body>
-  <h1>{self.settings.title}</h1>
+  <h1>{title}</h1>
 """
             )
 
             if len(albums) == 0:
                 index_file.write(
                     """\
-  <p>There are no publicly visible albums.</p>
+  <p>There are no albums in this gallery.</p>
 """
                 )
             else:

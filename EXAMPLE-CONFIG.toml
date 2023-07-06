@@ -1,3 +1,5 @@
+# Settings that affect both galleries and albums
+
 # The title of the gallery or album page
 title = "Media"
 
@@ -19,6 +21,17 @@ foreground_color = "#eeeeee"
 background_color = "#333333"
 link_color = "#44aadd"
 
+
+
+# Settings that only affect galleries
+
+# If specified, an index page will be generated for private albums
+#private_gallery_index_filename = "private-index.html"
+
+# If private_gallery_index_filename is specified, this will be the title of the
+# private gallery
+# Default value is "Media - Private"
+private_gallery_title = "Media - Private"
 
 
 
